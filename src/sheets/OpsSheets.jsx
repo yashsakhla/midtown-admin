@@ -124,10 +124,11 @@ export function BookingsSheet() {
       footer={<button className="btn p" onClick={() => openSheet('booking')}>+ Add a booking</button>}
     >
       {db.bookings.map((b) => (
-        <ListRow key={b.id}>
+        <ListRow key={b.id} onClick={() => openSheet('bookingView', { id: b.id })}>
           <div className="t">
             <b>{b.guest}</b>
-            <span>{b.src} · {b.ref} · {b.type} × {b.rooms} · {b.pax} pax · {b.inD}</span>
+            <span>{b.phone ? `📞 ${b.phone} · ` : ''}{b.src} · {b.ref}</span>
+            <span>{b.type} × {b.rooms} · {b.pax} pax · {b.inD}</span>
           </div>
           <div style={{ textAlign: 'right' }}>
             <div className="num" style={{ color: 'var(--ink)' }}>{money(b.amount)}</div>
@@ -135,6 +136,41 @@ export function BookingsSheet() {
           </div>
         </ListRow>
       ))}
+    </Sheet>
+  );
+}
+
+export function BookingViewSheet({ id }) {
+  const { db } = useHotel();
+  const b = db.bookings.find((x) => x.id === id);
+  if (!b) return null;
+  const tone = { Arriving: 'o', Confirmed: 'b', Cancelled: 'r', 'Checked in': 'g' };
+  const rows = [
+    ['Guest name', b.guest],
+    ['Mobile', b.phone ? <a href={`tel:${b.phone}`}>{b.phone}</a> : '—'],
+    ['Source', b.src],
+    ['Reference', b.ref],
+    ['Room type', `${b.type} × ${b.rooms}`],
+    ['Guests', b.pax],
+    ['Arrival', b.inD || '—'],
+    ['Departure', b.outD || '—'],
+    ['Amount', money(b.amount)],
+    ['Payment', b.pay || '—']
+  ];
+  return (
+    <Sheet title="Booking details">
+      <div style={{ marginBottom: 10 }}><Pill tone={tone[b.status] || 'n'}>{b.status}</Pill></div>
+      <table>
+        <tbody>
+          {rows.map(([k, v]) => <tr key={k}><td>{k}</td><td className="rt">{v}</td></tr>)}
+        </tbody>
+      </table>
+      {b.note && (
+        <div style={{ background: 'var(--bg)', borderRadius: 11, padding: '11px 12px', marginTop: 12, fontSize: 13 }}>
+          <div style={{ fontSize: 11.5, color: 'var(--muted)', marginBottom: 3 }}>Note</div>
+          {b.note}
+        </div>
+      )}
     </Sheet>
   );
 }

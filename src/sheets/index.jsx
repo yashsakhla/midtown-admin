@@ -5,9 +5,10 @@ import {
 } from './EntrySheets';
 import { EditGuestSheet, GuestsSheet } from './GuestSheets';
 import {
-  AddBookingSheet, BookingsSheet, ExpensesSheet, ExportSheet,
+  AddBookingSheet, BookingsSheet, BookingViewSheet, ExpensesSheet, ExportSheet,
   GstInvoiceSheet, InventorySheet, KotSheet, OnlineOrderSheet, StaffSheet
 } from './OpsSheets';
+import RequestSheet from './RequestSheet';
 import { AddRoomSheet, CheckInSheet, CheckOutSheet, RoomSheet } from './RoomSheets';
 
 const SHEETS = {
@@ -25,13 +26,15 @@ const SHEETS = {
   onlineOrder: OnlineOrderSheet,
   bookings: BookingsSheet,
   booking: AddBookingSheet,
+  bookingView: BookingViewSheet,
   inventory: InventorySheet,
   staff: StaffSheet,
   expenses: ExpensesSheet,
   invoice: GstInvoiceSheet,
   guests: GuestsSheet,
   editGuest: EditGuestSheet,
-  export: ExportSheet
+  export: ExportSheet,
+  request: RequestSheet
 };
 
 /** Renders whichever sheet the store has open. */

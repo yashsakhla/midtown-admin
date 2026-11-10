@@ -134,7 +134,7 @@ export const mapBooking = (b, typeById) => ({
   id: b.id, src: b.source, ref: b.ref, guest: b.guestName, phone: b.phone ?? '',
   type: typeById[b.roomTypeId]?.name ?? b.roomType?.name ?? '—',
   rooms: n(b.rooms) || 1, pax: n(b.pax) || 1,
-  inD: dateOnly(b.arrivalDate), amount: n(b.amount),
+  inD: dateOnly(b.arrivalDate), outD: dateOnly(b.departureDate), note: b.note ?? '', amount: n(b.amount),
   pay: b.payment ?? '', status: title(b.status)
 });
 
@@ -154,9 +154,26 @@ export const mapInvoice = (i) => ({
   id: i.number ?? i.id, party: i.party, date: dateOnly(i.businessDate)
 });
 
+/** A request belongs to a stay; once that stay is no longer a room's current stay the guest has left. */
+export const mapRequest = (r, roomByStay) => {
+  const room = roomByStay[r.stayId];
+  const created = r.createdAt ? new Date(r.createdAt) : null;
+  return {
+    id: r.id, stayId: r.stayId, key: r.key, label: r.label || title(r.key), note: r.note ?? '',
+    status: r.status, handledBy: r.handledByUserId, handledByName: r.handledByName ?? '',
+    remark: r.remark ?? r.statusRemark ?? '', price: n(r.price),
+    room: room?.no ?? r.roomNumber ?? null, guest: room?.guest ?? r.guestName ?? '', phone: room?.phone ?? r.phone ?? '',
+    checkIn: room?.checkIn ?? '', checkOut: room?.checkOut ?? '',
+    stayActive: !!room && r.stayStatus !== 'CHECKED_OUT',
+    expired: r.status === 'EXPIRED' || ((!room || r.stayStatus === 'CHECKED_OUT') && ['SENT', 'IN_PROGRESS'].includes(r.status)),
+    time: created ? created.toTimeString().slice(0, 5) : '',
+    date: created ? created.toISOString().slice(0, 10) : ''
+  };
+};
+
 export const emptyDb = () => ({
   date: today(), tariff: {}, roomTypes: [], rooms: [], entries: [],
   cash: { opening: 0, closed: false, txns: [] },
   bookings: [], online: [], stock: [], staff: [], att: {}, expenses: [],
-  kots: [], invoices: [], menu: []
+  kots: [], invoices: [], menu: [], requests: []
 });

@@ -2,9 +2,10 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { api, getSession, login, logout, setAuthLostHandler } from '../api/client';
 import {
   buildCash, dcOut, dec, emptyDb, list, mapBooking, mapEntry, mapExpense, mapInvoice, mapMenu,
-  mapOnline, mapRoom, mapRoomTypes, mapStaff, mapStock, modeOut, one, roomStatusOut
+  mapOnline, mapRequest, mapRoom, mapRoomTypes, mapStaff, mapStock, modeOut, one, roomStatusOut
 } from '../api/mappers';
 import { addDays, now, today } from '../lib/format';
+import { REQUEST_EXTRAS } from '../lib/requests';
 
 const HotelContext = createContext(null);
 
@@ -35,6 +36,17 @@ export function HotelProvider({ children }) {
   const closeSheet = useCallback(() => setSheet(null), []);
 
   /* ------------------------------------------------------------- loading */
+
+  /** Guest requests are polled separately so new ones appear without a full reload. */
+  const loadRequests = useCallback(async () => {
+    try {
+      const raw = list(await api.get('/service-requests'));
+      setDb((prev) => {
+        const byStay = Object.fromEntries(prev.rooms.filter((r) => r.stayId).map((r) => [r.stayId, r]));
+        return { ...prev, requests: raw.map((r) => mapRequest(r, byStay)) };
+      });
+    } catch { /* keep the previous list */ }
+  }, []);
 
   /** Pulls every list the screens show. A failing slice keeps its previous data. */
   const reload = useCallback(async () => {
@@ -84,8 +96,9 @@ export function HotelProvider({ children }) {
       if (invoicesR.ok) next.invoices = list(invoicesR.v).map(mapInvoice);
       return next;
     });
+    loadRequests();
     if (!roomsR.ok) toast('Could not load rooms — check the server');
-  }, [toast]);
+  }, [toast, loadRequests]);
 
   const signOut = useCallback(() => {
     logout();
@@ -103,6 +116,12 @@ export function HotelProvider({ children }) {
     reload().finally(() => live && setLoading(false));
     return () => { live = false; };
   }, [authed, reload]);
+
+  useEffect(() => {
+    if (!authed) return undefined;
+    const t = window.setInterval(loadRequests, 30000);
+    return () => window.clearInterval(t);
+  }, [authed, loadRequests]);
 
   const signIn = useCallback(async (identifier, password) => {
     await login(identifier, password);
@@ -341,6 +360,24 @@ export function HotelProvider({ children }) {
     }
   }, [att, toast]);
 
+  const updateRequest = useCallback(async (id, { status, remark, price }) => {
+    try {
+      const body = { status };
+      if (REQUEST_EXTRAS) {
+        if (remark) body.remark = remark;
+        if (Number(price) > 0) body.price = dec(price);
+      }
+      await api.patch(`/service-requests/${id}`, body);
+      await Promise.all([loadRequests(), Number(price) > 0 ? reload() : null]);
+      closeSheet();
+      toast('Request updated');
+      return true;
+    } catch (e) {
+      toast(e.message);
+      return false;
+    }
+  }, [toast, loadRequests, reload, closeSheet]);
+
   const addExpense = useCallback((form) => {
     const amount = Number(form.amount) || 0;
     if (!amount) { toast('Enter the amount'); return false; }
@@ -368,14 +405,14 @@ export function HotelProvider({ children }) {
       addEntry, updateEntry, deleteEntry, closeDay,
       settleBill, sendKot, addOnlineOrder,
       addBooking, adjustStock, setAttendance, addExpense,
-      updateGuestStay, saveInvoice
+      updateGuestStay, saveInvoice, updateRequest
     }
   }), [
     fullDb, tab, sheet, toastMsg, openSheet, closeSheet, toast, authed, loading, signIn, signOut, reload,
     setDate, setOpening, addRoom, setRoomStatus, markAllClean, checkIn, checkOut,
     addEntry, updateEntry, deleteEntry, closeDay, settleBill, sendKot,
     addOnlineOrder, addBooking, adjustStock, setAttendance, addExpense,
-    updateGuestStay, saveInvoice
+    updateGuestStay, saveInvoice, updateRequest
   ]);
 
   return <HotelContext.Provider value={value}>{children}</HotelContext.Provider>;

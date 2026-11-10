@@ -4,6 +4,7 @@ import Field, { Row2 } from '../components/Field';
 import Pill from '../components/Pill';
 import Sheet from '../components/Sheet';
 import { addDays, money } from '../lib/format';
+import { REQUEST_STATUS } from '../lib/requests';
 import { useHotel } from '../store/HotelContext';
 
 const STATUS_TEXT = {
@@ -204,6 +205,8 @@ export function CheckOutSheet({ no }) {
   });
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
   if (!room) return null;
+  const requests = db.requests.filter((r) => r.stayId === room.stayId);
+  const roomKots = db.kots.filter((k) => k.room === no);
 
   return (
     <Sheet
@@ -211,6 +214,47 @@ export function CheckOutSheet({ no }) {
       footer={<button className="btn p" onClick={() => actions.checkOut(no, form)}>Settle &amp; check out</button>}
     >
       <Field label="Guest" value={room.guest || ''} disabled readOnly />
+
+      <h3 style={{ margin: '4px 0 8px', fontSize: 14 }}>Bill summary</h3>
+      <table>
+        <tbody>
+          <tr>
+            <td>Room — {room.type}, {room.nights} night{room.nights > 1 ? 's' : ''} × {money(room.rate)}</td>
+            <td className="rt num">{money(room.rate * room.nights)}</td>
+          </tr>
+          {roomKots.flatMap((k) => k.items.map((i, n) => (
+            <tr key={`${k.id}-${n}`}>
+              <td>Room service {k.time} — {i.q}× {i.n}</td>
+              <td className="rt num">{money(i.q * i.p)}</td>
+            </tr>
+          )))}
+          <tr>
+            <td><b>Balance to collect (updated folio)</b></td>
+            <td className="rt num" style={{ color: 'var(--ink)' }}>{money(room.folio)}</td>
+          </tr>
+        </tbody>
+      </table>
+
+      {requests.length > 0 && (
+        <>
+          <h3 style={{ margin: '14px 0 8px', fontSize: 14 }}>Guest requests for this stay</h3>
+          {requests.map((r) => (
+            <div key={r.id} style={{ display: 'flex', gap: 8, justifyContent: 'space-between', marginBottom: 6, fontSize: 13 }}>
+              <span><b style={{ color: 'var(--ink)' }}>{r.label}</b>{r.note ? ` — ${r.note}` : ''} · {r.time}</span>
+              <Pill tone={(r.expired ? REQUEST_STATUS.EXPIRED : REQUEST_STATUS[r.status])?.tone}>
+                {(r.expired ? REQUEST_STATUS.EXPIRED : REQUEST_STATUS[r.status])?.label}
+              </Pill>
+            </div>
+          ))}
+          {requests.some((r) => ['SENT', 'IN_PROGRESS'].includes(r.status)) && (
+            <p style={{ fontSize: 12, color: 'var(--red)', margin: '4px 0 0' }}>
+              Some requests are still open — they expire when you check out.
+            </p>
+          )}
+        </>
+      )}
+      <div style={{ height: 14 }} />
+
       <Row2>
         <Field label="Balance to collect" type="number" value={form.amount} onChange={set('amount')} />
         <Field as="select" label="Mode" value={form.mode} onChange={set('mode')}>
