@@ -6,7 +6,8 @@ export const roomLabel = (r) =>
   r.status === 'vacant' ? 'Ready'
     : r.status === 'occupied' ? (r.guest || 'Occupied')
       : r.status === 'dirty' ? 'Needs cleaning'
-        : 'Out of order';
+        : r.status === 'maintenance' ? 'Maintenance'
+          : 'Out of order';
 
 /** Illustrated room tile — colour, badge and bed art follow the status. */
 export default function RoomCard({ room, onClick }) {

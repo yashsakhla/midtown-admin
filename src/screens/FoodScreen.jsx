@@ -93,7 +93,10 @@ export default function FoodScreen() {
         )}
       </Card>
 
-      <h3 style={{ margin: '16px 0 10px' }}>Restaurant billing</h3>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', margin: '16px 0 10px' }}>
+        <h3 style={{ margin: 0 }}>Restaurant billing</h3>
+        <button className="btn sm" onClick={() => openSheet('addMenuItem')}>+ Add food item</button>
+      </div>
 
       <div className="chips">
         {cats.map((c) => (
@@ -104,7 +107,7 @@ export default function FoodScreen() {
       <div className="menu">
         {list.map((m) => (
           <button key={m.n} className="mcard" onClick={() => addToCart(m)}>
-            <img src={foodImg(m.n)} alt={m.n} />
+            <img src={m.img || foodImg(m.n)} alt={m.n} />
             <div className="mb">
               <div className="mn">{m.n}</div>
               <div className="mp">{money(m.p)}</div>

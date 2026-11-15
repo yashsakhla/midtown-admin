@@ -2,8 +2,9 @@ import { useState } from 'react';
 import Field, { Row2 } from '../components/Field';
 import Pill from '../components/Pill';
 import Sheet from '../components/Sheet';
-import { money } from '../lib/format';
-import { closingBalance, PAYMENT_MODES, totalPayout, totalReceipt } from '../lib/selectors';
+import { addDays, fmtDate, money } from '../lib/format';
+import { sourceLabel } from '../api/mappers';
+import { cashInHand, closingBalance, PAYMENT_MODES, totalPayout, totalReceipt } from '../lib/selectors';
 import { useHotel } from '../store/HotelContext';
 
 const ENTRY_TYPES = [
@@ -91,11 +92,11 @@ export function EntryViewSheet({ id }) {
   return (
     <Sheet
       title={`Entry · ${e.type}`}
-      footer={
+      footer={e.source === 'MANUAL' && (
         <button className="btn p" onClick={() => openSheet('editEntry', { id })}>
           Correct this entry
         </button>
-      }
+      )}
     >
       <Pill tone={e.dc === 'credit' ? 'g' : 'r'}>
         {e.dc === 'credit' ? 'Credit' : 'Debit'} {money(e.amount)}
@@ -109,11 +110,14 @@ export function EntryViewSheet({ id }) {
           <tr><td>Vehicle</td><td className="rt">{e.vehicle || '—'}</td></tr>
           <tr><td>Mode</td><td className="rt">{e.mode}</td></tr>
           <tr><td>Narration</td><td className="rt">{e.narration || '—'}</td></tr>
+          <tr><td>Posted from</td><td className="rt">{sourceLabel(e.source)}</td></tr>
+          {e.shortfall > 0 && <tr><td style={{ color: 'var(--red)' }}>Short received</td><td className="rt num" style={{ color: 'var(--red)' }}>{money(e.shortfall)}</td></tr>}
         </tbody>
       </table>
       <p style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 10 }}>
-        Corrections update this entry and its day-book line. No refund or
-        reversal entry is created.
+        {e.source === 'MANUAL'
+          ? 'Corrections update this entry and its day-book line. No refund or reversal entry is created.'
+          : `Posted automatically from ${sourceLabel(e.source).toLowerCase()}. Change it where it was created, not here.`}
       </p>
     </Sheet>
   );
@@ -211,28 +215,88 @@ export function OpeningBalanceSheet() {
 
 export function CloseDaySheet() {
   const { db, actions } = useHotel();
-  const closing = closingBalance(db);
+  const expected = cashInHand(db);
+  const [counted, setCounted] = useState(String(expected));
+  const [note, setNote] = useState('');
+  const diff = expected - (Number(counted) || 0);          // positive = short
+  const needNote = diff !== 0;
+
   return (
     <Sheet
-      title="Close the day"
-      footer={<button className="btn p" onClick={() => actions.closeDay(closing)}>Close day</button>}
+      title={`Close day — ${fmtDate(db.date)}`}
+      footer={
+        <button
+          className="btn p" disabled={counted === '' || (needNote && !note.trim())}
+          onClick={() => actions.closeDay({ counted, note: note.trim() })}
+        >
+          Close day
+        </button>
+      }
     >
       <table>
         <tbody>
           <tr><td>Opening balance</td><td className="rt num">{money(db.cash.opening)}</td></tr>
           <tr><td>Total receipt</td><td className="rt num">{money(totalReceipt(db))}</td></tr>
-          <tr><td>Total payout</td><td className="rt num">{money(totalPayout(db))}</td></tr>
+          <tr><td>Total payout (incl. expenses)</td><td className="rt num">{money(totalPayout(db))}</td></tr>
           <tr>
-            <td><b>Closing balance</b></td>
-            <td className="rt num" style={{ fontSize: 16, color: 'var(--ink)' }}>{money(closing)}</td>
+            <td><b>Closing balance (carried to next day)</b></td>
+            <td className="rt num" style={{ fontSize: 16, color: 'var(--ink)' }}>{money(closingBalance(db))}</td>
           </tr>
+          <tr><td>Expected cash in drawer</td><td className="rt num">{money(expected)}</td></tr>
         </tbody>
       </table>
-      <div style={{ height: 12 }} />
+      <div style={{ height: 10 }} />
+
+      <Field label="Cash counted in drawer" type="number" value={counted} onChange={(e) => setCounted(e.target.value)} />
+      {diff !== 0 && (
+        <div style={{ borderLeft: '4px solid var(--red)', background: '#FDF2F1', color: 'var(--red)', borderRadius: 11, padding: '10px 12px', fontSize: 13, marginBottom: 10 }}>
+          <b>{diff > 0 ? `Shortage ${money(diff)}` : `Excess ${money(-diff)}`}</b> — it will be shown as a red line in the day book.
+        </div>
+      )}
+      <Field
+        label={needNote ? 'Reason for the difference (required)' : 'Hand-over note (optional)'}
+        value={note} onChange={(e) => setNote(e.target.value)}
+        placeholder="For the next manager"
+      />
       <div style={{ background: 'var(--ow)', color: '#A55A00', borderRadius: 11, padding: '11px 12px', fontSize: 12.5 }}>
-        Today's entries are cleared and the closing balance becomes tomorrow's
-        opening balance. Export the reports first if you need a copy.
+        You can close at any time. The day stays on {fmtDate(db.date)} even after midnight.
+        The next manager starts a new day, and this closing balance becomes its opening balance.
       </div>
+      <div style={{ height: 12 }} />
+    </Sheet>
+  );
+}
+
+export function StartDaySheet() {
+  const { db, actions } = useHotel();
+  const d = db.day || {};
+  const [form, setForm] = useState({
+    date: d.suggestedDate || (d.lastClosedDate ? addDays(d.lastClosedDate, 1) : db.date),
+    opening: String(d.lastClosing ?? 0), note: ''
+  });
+  const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
+  const changed = d.lastClosedDate && Number(form.opening) !== d.lastClosing;
+
+  return (
+    <Sheet
+      title="Start day"
+      footer={<button className="btn p" onClick={() => actions.startDay(form)}>Start day</button>}
+    >
+      {d.lastClosedDate && (
+        <p style={{ fontSize: 12.5, color: 'var(--muted)', marginTop: 0 }}>
+          Last day closed: {fmtDate(d.lastClosedDate)} with {money(d.lastClosing)}.
+        </p>
+      )}
+      <Row2>
+        <Field label="This day is for (date)" type="date" value={form.date} onChange={set('date')} />
+        <Field label="Opening balance" type="number" value={form.opening} onChange={set('opening')} />
+      </Row2>
+      {changed && (
+        <p style={{ fontSize: 12, color: 'var(--red)', margin: '0 0 8px' }}>
+          Differs from the previous closing balance — add a note so it can be traced.
+        </p>
+      )}
+      <Field label="Note (optional)" value={form.note} onChange={set('note')} />
       <div style={{ height: 12 }} />
     </Sheet>
   );

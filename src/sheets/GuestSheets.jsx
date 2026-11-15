@@ -4,6 +4,7 @@ import ListRow from '../components/ListRow';
 import Pill from '../components/Pill';
 import Sheet from '../components/Sheet';
 import { addDays, money } from '../lib/format';
+import { GUEST_OPTIONS } from '../lib/rooms';
 import { occupiedRooms, PAYMENT_MODES } from '../lib/selectors';
 import { useHotel } from '../store/HotelContext';
 
@@ -55,6 +56,7 @@ export function EditGuestSheet({ no }) {
     phone: room?.phone || '',
     vehicle: room?.vehicle || '',
     checkIn: room?.checkIn || db.date,
+    guests: String(room?.guests || 1),
     nights: String(room?.nights || 1),
     checkOut: room?.checkOut || addDays(room?.checkIn || db.date, room?.nights || 1),
     folio: String(room?.folio ?? 0),
@@ -86,6 +88,14 @@ export function EditGuestSheet({ no }) {
             Save changes{form.payType && payAmount ? ` & post ${form.payType.toLowerCase()}` : ''}
           </button>
           <div style={{ height: 8 }} />
+          <button className="btn" onClick={() => openSheet('shiftRoom', { no })}>
+            Shift to another room
+          </button>
+          <div style={{ height: 8 }} />
+          <button className="btn" disabled={room.guests >= 4} onClick={() => openSheet('addGuest', { no })}>
+            Add another guest
+          </button>
+          <div style={{ height: 8 }} />
           <button className="btn" onClick={() => openSheet('checkOut', { no })}>
             Check out &amp; settle
           </button>
@@ -97,6 +107,9 @@ export function EditGuestSheet({ no }) {
         <Field label="Phone" type="tel" value={form.phone} onChange={set('phone')} />
         <Field label="Vehicle" value={form.vehicle} onChange={set('vehicle')} />
       </Row2>
+      <Field as="select" label="Number of guests" value={form.guests} onChange={set('guests')}>
+        {GUEST_OPTIONS.map((g) => <option key={g.value} value={g.value}>{g.label}</option>)}
+      </Field>
       <Row2>
         <Field label="Check-in" type="date" value={form.checkIn} onChange={setCheckIn} />
         <Field label="Nights" type="number" value={form.nights} onChange={setNights} />

@@ -7,7 +7,7 @@ import {
 import { useHotel } from '../store/HotelContext';
 
 export default function MoreScreen() {
-  const { db, openSheet } = useHotel();
+  const { db, setTab } = useHotel();
 
   const present = db.staff.filter((s) => db.att[s.id] === 'P').length;
   const absent = db.staff.filter((s) => db.att[s.id] === 'A').length;
@@ -20,6 +20,7 @@ export default function MoreScreen() {
     ['Expenses', `${money(expenseTotal)} today`, 'expenses'],
     ['GST invoice', 'Create a tax invoice', 'invoice'],
     ['Guest management', 'In-house stays, dates & folio', 'guests'],
+    ['Customers', `${db.customers.length} on record · history & IDs`, 'customers'],
     ['Export reports', 'Download as PDF or Excel', 'export']
   ];
 
@@ -31,7 +32,7 @@ export default function MoreScreen() {
             key={key}
             title={title}
             sub={sub}
-            onClick={() => openSheet(key)}
+            onClick={() => setTab(key)}
             right={<span style={{ color: 'var(--muted)' }}>›</span>}
           />
         ))}

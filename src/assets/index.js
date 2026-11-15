@@ -31,19 +31,16 @@ export const HERO = BANNER;
 export const EXTERIOR = [EXT1, EXT2];
 
 /** Room photograph by room type. */
-export const ROOM_IMG = {
-  Standard: ROOM_STD,
-  Deluxe: ROOM_DLX,
-  Executive: ROOM_STE,
-  Suite: ROOM_STE
-};
+export const roomImg = (type = '') =>
+  /executive|suite/i.test(type) ? ROOM_STE : /deluxe/i.test(type) ? ROOM_DLX : ROOM_STD;
 
 /** Illustration shown on a room card, by status. */
 export const ROOM_ART = {
   vacant: ART_VACANT,
   occupied: ART_OCCUPIED,
   dirty: ART_DIRTY,
-  ooo: ART_VACANT
+  ooo: ART_VACANT,
+  maintenance: ART_VACANT
 };
 
 /** Menu photographs, keyed by dish name. */

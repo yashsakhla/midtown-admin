@@ -64,6 +64,14 @@ export const REQUEST_TYPES = {
       REJECTED: ['Guest unreachable']
     }
   },
+  roomshift: {
+    ...base, icon: '🔁', label: 'Room shift request', hint: 'Guest wants to move to another room: approve to pick the room and adjust the price',
+    remarks: {
+      IN_PROGRESS: ['Checking availability'],
+      DONE: ['Shifted to the new room'],
+      REJECTED: ['No suitable room available']
+    }
+  },
   checkout: {
     ...base, icon: '🧳', label: 'Checkout request', hint: 'Guest wants to check out — settle the bill',
     remarks: {

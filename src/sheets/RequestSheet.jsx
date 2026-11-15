@@ -14,7 +14,7 @@ const NEXT = [
 
 /** Full detail of one guest request, with the status change and remark. */
 export default function RequestSheet({ id }) {
-  const { db, actions } = useHotel();
+  const { db, actions, openSheet } = useHotel();
   const r = db.requests.find((x) => x.id === id);
 
   const [status, setStatus] = useState(r?.status === 'SENT' ? 'IN_PROGRESS' : 'DONE');
@@ -27,6 +27,8 @@ export default function RequestSheet({ id }) {
   const st = REQUEST_STATUS[r.expired ? 'EXPIRED' : r.status] || REQUEST_STATUS.SENT;
   const locked = r.expired || r.status === 'DONE' || r.status === 'REJECTED';
   const needsRemark = status === 'REJECTED';
+  const isShift = String(r.key || '').toLowerCase().replace(/[\s_-]+/g, '').includes('roomshift');
+  const canShift = isShift && !locked && r.stayActive && r.room;
   const showPrice = REQUEST_EXTRAS && type.chargeable && status === 'DONE';
 
   const save = async () => {
@@ -39,7 +41,11 @@ export default function RequestSheet({ id }) {
   return (
     <Sheet
       title={`${type.icon} ${type.label}`}
-      footer={!locked && (
+      footer={canShift ? (
+        <button className="btn p" onClick={() => openSheet('shiftRoom', { no: r.room, requestId: r.id })}>
+          Review &amp; shift room
+        </button>
+      ) : !locked && (
         <button className="btn p" disabled={busy || (needsRemark && !remark.trim())} onClick={save}>
           {busy ? 'Saving…' : `Save as ${REQUEST_STATUS[status].label.toLowerCase()}`}
         </button>

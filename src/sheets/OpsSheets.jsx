@@ -1,4 +1,8 @@
 import { useMemo, useState } from 'react';
+import DateBar from '../components/DateBar';
+import ImagePicker from '../components/ImagePicker';
+import { fmtDate } from '../lib/format';
+import { ROOM_TYPES } from '../lib/rooms';
 import Field, { Row2 } from '../components/Field';
 import ListRow from '../components/ListRow';
 import Pill from '../components/Pill';
@@ -155,7 +159,7 @@ export function BookingViewSheet({ id }) {
     ['Arrival', b.inD || '—'],
     ['Departure', b.outD || '—'],
     ['Amount', money(b.amount)],
-    ['Payment', b.pay || '—']
+    ['Payment', b.pay || 'Not opted']
   ];
   return (
     <Sheet title="Booking details">
@@ -179,7 +183,7 @@ export function AddBookingSheet() {
   const { db, actions } = useHotel();
   const [form, setForm] = useState({
     src: 'MakeMyTrip', ref: '', guest: '', phone: '',
-    type: 'Standard', rooms: '1', pax: '2', inD: db.date, amount: '', pay: 'Prepaid'
+    type: ROOM_TYPES[0], rooms: '1', pax: '2', inD: db.date, amount: '', pay: 'Prepaid'
   });
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
 
@@ -200,7 +204,7 @@ export function AddBookingSheet() {
       <Row2>
         <Field label="Phone" type="tel" value={form.phone} onChange={set('phone')} />
         <Field as="select" label="Room type" value={form.type} onChange={set('type')}>
-          {Object.keys(db.tariff).map((t) => <option key={t}>{t}</option>)}
+          {ROOM_TYPES.map((t) => <option key={t}>{t}</option>)}
         </Field>
       </Row2>
       <Row2>
@@ -222,10 +226,10 @@ export function AddBookingSheet() {
 /* -------------------------------------------------------------- inventory */
 
 export function InventorySheet() {
-  const { db, actions } = useHotel();
+  const { db, actions, openSheet } = useHotel();
   const value = db.stock.reduce((s, i) => s + i.qty * i.rate, 0);
   return (
-    <Sheet title="Inventory">
+    <Sheet title="Inventory" footer={<button className="btn p" onClick={() => openSheet('addStock')}>+ Add inventory item</button>}>
       <ListRow
         title="Stock value"
         sub={`${lowStock(db).length} items below minimum`}
@@ -254,10 +258,10 @@ export function InventorySheet() {
 /* ------------------------------------------------------------------ staff */
 
 export function StaffSheet() {
-  const { db, actions } = useHotel();
+  const { db, actions, openSheet } = useHotel();
   const marks = [['P', 'g'], ['A', 'r'], ['L', 'o']];
   return (
-    <Sheet title="Staff attendance">
+    <Sheet title="Staff attendance" footer={<button className="btn p" onClick={() => openSheet('addStaff')}>+ Add staff</button>}>
       {db.staff.map((s) => (
         <ListRow key={s.id}>
           <div className="t">
@@ -289,30 +293,81 @@ export function StaffSheet() {
 export function ExpensesSheet() {
   const { db, actions } = useHotel();
   const [form, setForm] = useState({
-    head: 'Kitchen purchase', vendor: '', mode: 'Cash', amount: '', narration: ''
+    head: 'Kitchen purchase', vendor: '', mode: 'Cash', amount: '', narration: '', payment: 'NOW', dueDate: ''
   });
+  const [payingId, setPayingId] = useState(null);
+  const [pay, setPay] = useState({ amount: '', mode: 'Cash', narration: '' });
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
   const total = db.expenses.reduce((s, e) => s + e.amount, 0);
+  const cashOut = db.expenses.reduce((s, e) => s + (e.onCredit ? 0 : e.amount), 0);
+  const payables = db.payables || [];
+  const payable = payables.reduce((s, e) => s + e.due, 0);
+  const byVendor = payables.reduce((m, e) => ({ ...m, [e.vendor || 'Unknown']: (m[e.vendor || 'Unknown'] || 0) + e.due }), {});
+  const startPay = (e) => { setPayingId(e.id); setPay({ amount: String(e.due), mode: 'Cash', narration: '' }); };
+  const submitPay = async (e) => {
+    if (await actions.payExpenseDue(e.id, pay)) setPayingId(null);
+  };
 
   return (
     <Sheet
       title="Expenses"
       footer={<button className="btn p" onClick={() => actions.addExpense(form)}>Record expense</button>}
     >
+      <DateBar label="Expenses for" />
+      {!db.expenses.length && <ListRow><span style={{ color: 'var(--muted)' }}>No expenses on {fmtDate(db.date)}.</span></ListRow>}
       {db.expenses.map((e) => (
         <ListRow
           key={e.id}
           title={e.head}
-          sub={`${e.vendor} · ${e.mode} · ${e.narration}`}
-          right={<span className="num" style={{ color: 'var(--red)' }}>−{money(e.amount)}</span>}
+          sub={`${e.time ? e.time + ' · ' : ''}${e.vendor} · ${e.onCredit ? 'On credit (udhari)' : e.mode} · ${e.narration}`}
+          right={e.onCredit
+            ? <span className="num" style={{ color: 'var(--ow-ink, #A55A00)' }}>Due {money(e.amount)}</span>
+            : <span className="num" style={{ color: 'var(--red)' }}>−{money(e.amount)}</span>}
         />
       ))}
       <ListRow
-        title="Total today"
+        title={`Total · ${fmtDate(db.date)}`}
+        sub={total !== cashOut ? `${money(cashOut)} paid · ${money(total - cashOut)} on credit` : undefined}
         right={<span className="num" style={{ color: 'var(--ink)' }}>{money(total)}</span>}
       />
 
+      <h3 style={{ margin: '16px 0 8px', fontSize: 14 }}>Payables — we owe · {money(payable)}</h3>
+      {payables.length === 0 && <p style={{ fontSize: 12.5, color: 'var(--muted)', margin: '0 0 8px' }}>Nothing is owed to any vendor.</p>}
+      {Object.keys(byVendor).length > 1 && (
+        <p style={{ fontSize: 12, color: 'var(--muted)', margin: '0 0 6px' }}>
+          {Object.entries(byVendor).map(([v, a]) => `${v} ${money(a)}`).join(' · ')}
+        </p>
+      )}
+      {payables.map((e) => (
+        <div key={e.id}>
+          <ListRow
+            title={`${e.vendor || 'Vendor'} · ${e.head}`}
+            sub={`${fmtDate(e.date)}${e.dueDate ? ` · pay by ${fmtDate(e.dueDate)}` : ''} · bill ${money(e.amount)}${e.paid > 0 ? `, paid ${money(e.paid)}` : ''}`}
+            right={
+              <div style={{ textAlign: 'right' }}>
+                <div className="num" style={{ color: 'var(--red)' }}>{money(e.due)}</div>
+                <button type="button" className="btn sm" onClick={() => (payingId === e.id ? setPayingId(null) : startPay(e))}>{payingId === e.id ? 'Cancel' : 'Pay'}</button>
+              </div>
+            }
+          />
+          {payingId === e.id && (
+            <div style={{ background: 'var(--bg)', borderRadius: 11, padding: '10px 12px', margin: '6px 0' }}>
+              <Row2>
+                <Field label="Paying now" type="number" value={pay.amount} onChange={(x) => setPay((p) => ({ ...p, amount: x.target.value }))} />
+                <Field as="select" label="Mode" value={pay.mode} onChange={(x) => setPay((p) => ({ ...p, mode: x.target.value }))}>
+                  {PAYMENT_MODES.map((m) => <option key={m}>{m}</option>)}
+                </Field>
+              </Row2>
+              <button type="button" className="btn p" onClick={() => submitPay(e)}>Record payment (goes out of the day book)</button>
+            </div>
+          )}
+        </div>
+      ))}
+
       <div style={{ height: 12 }} />
+      <p style={{ fontSize: 12, color: 'var(--muted)', margin: '0 0 8px' }}>
+        New expenses are recorded on the open business day{db.day?.businessDate ? ` (${fmtDate(db.day.businessDate)})` : ''} and also appear in the day book.
+      </p>
       <Row2>
         <Field as="select" label="Head" value={form.head} onChange={set('head')}>
           {['Kitchen purchase', 'Laundry', 'Maintenance', 'Electricity', 'Salary advance',
@@ -320,13 +375,98 @@ export function ExpensesSheet() {
         </Field>
         <Field label="Vendor" value={form.vendor} onChange={set('vendor')} />
       </Row2>
+      <Field as="select" label="Payment" value={form.payment} onChange={set('payment')}>
+        <option value="NOW">Paid now</option>
+        <option value="CREDIT">On credit (udhari) — pay later</option>
+      </Field>
       <Row2>
         <Field label="Amount" type="number" value={form.amount} onChange={set('amount')} />
-        <Field as="select" label="Mode" value={form.mode} onChange={set('mode')}>
-          {PAYMENT_MODES.map((m) => <option key={m}>{m}</option>)}
+        {form.payment === 'CREDIT'
+          ? <Field label="Pay by (optional)" type="date" value={form.dueDate} onChange={set('dueDate')} />
+          : (
+            <Field as="select" label="Mode" value={form.mode} onChange={set('mode')}>
+              {PAYMENT_MODES.map((m) => <option key={m}>{m}</option>)}
+            </Field>
+          )}
+      </Row2>
+      {form.payment === 'CREDIT' && (
+        <p style={{ fontSize: 12, color: 'var(--muted)', margin: '0 0 8px' }}>
+          The vendor name is required. This is not paid out of the cash book now; it is listed under Payables until you pay it.
+        </p>
+      )}
+      <Field label="Narration" value={form.narration} onChange={set('narration')} />
+    </Sheet>
+  );
+}
+
+/* ------------------------------------------------ add inventory / staff / menu */
+
+export function AddStockSheet() {
+  const { actions } = useHotel();
+  const [form, setForm] = useState({ item: '', cat: 'Kitchen', unit: 'kg', qty: '', min: '', rate: '' });
+  const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
+  return (
+    <Sheet title="Add inventory item" footer={<button className="btn p" onClick={() => actions.addStock(form)}>Save item</button>}>
+      <Field label="Item name" placeholder="Basmati rice" value={form.item} onChange={set('item')} />
+      <Row2>
+        <Field as="select" label="Category" value={form.cat} onChange={set('cat')}>
+          {['Kitchen', 'Housekeeping', 'Laundry', 'Bar', 'Maintenance', 'General'].map((c) => <option key={c}>{c}</option>)}
+        </Field>
+        <Field as="select" label="Unit" value={form.unit} onChange={set('unit')}>
+          {['kg', 'g', 'litre', 'ml', 'pcs', 'packet', 'box', 'dozen'].map((u) => <option key={u}>{u}</option>)}
         </Field>
       </Row2>
-      <Field label="Narration" value={form.narration} onChange={set('narration')} />
+      <Row2>
+        <Field label="Opening quantity" type="number" value={form.qty} onChange={set('qty')} />
+        <Field label="Minimum level" type="number" placeholder="Alert below this" value={form.min} onChange={set('min')} />
+      </Row2>
+      <Field label="Rate per unit" type="number" value={form.rate} onChange={set('rate')} />
+    </Sheet>
+  );
+}
+
+export function AddStaffSheet() {
+  const { actions } = useHotel();
+  const [form, setForm] = useState({ name: '', role: 'Housekeeping', shift: 'Morning', phone: '', salary: '' });
+  const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
+  return (
+    <Sheet title="Add staff" footer={<button className="btn p" onClick={() => actions.addStaff(form)}>Save staff</button>}>
+      <Field label="Full name" value={form.name} onChange={set('name')} />
+      <Row2>
+        <Field as="select" label="Role" value={form.role} onChange={set('role')}>
+          {['Manager', 'Front desk', 'Housekeeping', 'Kitchen', 'Waiter', 'Security', 'Maintenance', 'Other'].map((r) => <option key={r}>{r}</option>)}
+        </Field>
+        <Field as="select" label="Shift" value={form.shift} onChange={set('shift')}>
+          {['Morning', 'Evening', 'Night', 'General'].map((r) => <option key={r}>{r}</option>)}
+        </Field>
+      </Row2>
+      <Row2>
+        <Field label="Phone" type="tel" value={form.phone} onChange={set('phone')} />
+        <Field label="Monthly salary" type="number" value={form.salary} onChange={set('salary')} />
+      </Row2>
+    </Sheet>
+  );
+}
+
+export function AddMenuItemSheet() {
+  const { db, actions } = useHotel();
+  const cats = [...new Set(db.menu.map((m) => m.c))];
+  const [form, setForm] = useState({ name: '', description: '', category: cats[0] || 'Main', veg: 'veg', price: '', image: null });
+  const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
+  return (
+    <Sheet title="Add food item" footer={<button className="btn p" onClick={() => actions.addMenuItem(form)}>Add to menu</button>}>
+      <Field label="Name" placeholder="Paneer butter masala" value={form.name} onChange={set('name')} />
+      <Field as="textarea" rows={2} label="Description" placeholder="Short line shown to guests" value={form.description} onChange={set('description')} />
+      <Row2>
+        <Field label="Price" type="number" value={form.price} onChange={set('price')} />
+        <Field as="select" label="Type" value={form.veg} onChange={set('veg')}>
+          <option value="veg">Veg</option>
+          <option value="non">Non-veg</option>
+        </Field>
+      </Row2>
+      <Field label="Category" list="menu-cats" placeholder="Main, Starter, Drinks…" value={form.category} onChange={set('category')} />
+      <datalist id="menu-cats">{cats.map((c) => <option key={c} value={c} />)}</datalist>
+      <ImagePicker label="Photo" multiple={false} files={form.image ? [form.image] : []} onChange={(f) => setForm((x) => ({ ...x, image: f[0] || null }))} />
     </Sheet>
   );
 }

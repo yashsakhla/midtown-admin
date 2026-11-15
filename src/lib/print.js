@@ -101,3 +101,70 @@ export function downloadExcel({ title, date, head, rows }) {
   a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 3000);
 }
+
+/* ------------------------------------------------------------ guest bill */
+
+const inr = (v) => Number(v || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+function billDocument({ title, sections, guest, room, checkIn, checkOut, no, payments, note }) {
+  const live = sections.filter((s) => s.lines.length);
+  const rows = live.map((s) => `
+    <tr><td colspan="4" style="background:#f1efe9"><b>${esc(s.title)}</b> <span style="color:#777">· GST ${s.rate}%</span></td></tr>
+    ${s.lines.map((l) => `<tr><td>${esc(l.d)}</td><td style="text-align:right">${esc(l.q)}</td>
+      <td style="text-align:right">${inr(l.rate)}</td><td style="text-align:right">${inr(l.amount)}</td></tr>`).join('')}`).join('');
+
+  const tax = live.map((s) => `<tr><td>${esc(s.title)}</td><td style="text-align:right">${s.rate}%</td>
+    <td style="text-align:right">${inr(s.taxable)}</td><td style="text-align:right">${inr(s.cgst)}</td>
+    <td style="text-align:right">${inr(s.sgst)}</td><td style="text-align:right">${inr(s.total)}</td></tr>`).join('');
+
+  const total = live.reduce((a, s) => a + s.total, 0);
+  const cgst = live.reduce((a, s) => a + s.cgst, 0);
+  const sgst = live.reduce((a, s) => a + s.sgst, 0);
+  const taxable = live.reduce((a, s) => a + s.taxable, 0);
+
+  return `<div style="padding:22px;font-family:Arial,sans-serif;font-size:12px;page-break-after:always">
+    <div style="text-align:center"><h2 style="margin:0">${esc(HOTEL.name)}</h2>
+      ${esc(HOTEL.address)}<br>GSTIN ${HOTEL.gstin} · Ph ${HOTEL.phone}</div>
+    <h3 style="text-align:center;margin:12px 0">${esc(title)}</h3>
+    <table style="width:100%;margin-bottom:8px"><tr>
+      <td>Guest: <b>${esc(guest)}</b><br>Room: ${esc(room)}</td>
+      <td style="text-align:right">${no ? `Bill no: ${esc(no)}<br>` : ''}Stay: ${esc(checkIn)} to ${esc(checkOut)}<br>Printed: ${new Date().toLocaleString('en-IN')}</td>
+    </tr></table>
+    <table border="1" cellpadding="5" style="border-collapse:collapse;width:100%">
+      <tr><th style="text-align:left">Description</th><th>Qty</th><th>Rate</th><th>Amount</th></tr>${rows}
+    </table>
+    <table border="1" cellpadding="5" style="border-collapse:collapse;width:100%;margin-top:10px;font-size:11px">
+      <tr><th style="text-align:left">Tax summary</th><th>GST</th><th>Taxable</th><th>CGST</th><th>SGST</th><th>Total</th></tr>${tax}
+      <tr><td><b>Total</b></td><td></td><td style="text-align:right">${inr(taxable)}</td>
+        <td style="text-align:right">${inr(cgst)}</td><td style="text-align:right">${inr(sgst)}</td>
+        <td style="text-align:right"><b>${inr(total)}</b></td></tr>
+    </table>
+    <p style="text-align:right;font-size:15px;margin:10px 0"><b>Amount payable: ₹${inr(total)}</b></p>
+    ${payments?.length ? `<p>Paid by: ${payments.map((p) => `${esc(p.mode)} ₹${inr(p.amount)}`).join(' · ')}</p>` : ''}
+    ${note ? `<p>${esc(note)}</p>` : ''}
+    <p style="margin-top:34px;text-align:right">For The Midtown Hotel<br><br>Authorised signatory</p>
+  </div>`;
+}
+
+/**
+ * Prints a guest bill. `which`: 'combined' | 'stay' | 'food' | 'other' | 'separate'
+ * ('separate' prints one bill per non-empty section, each on its own page).
+ */
+export function printBill({ bill, which = 'combined', ...meta }) {
+  const live = bill.sections.filter((s) => s.lines.length);
+  if (!live.length) return false;
+  const doc = (sections, title) => billDocument({ ...meta, sections, title });
+
+  let html;
+  if (which === 'separate') {
+    html = live.map((s) => doc([s], `${s.title} bill`)).join('');
+  } else if (which === 'combined') {
+    html = doc(live, meta.title || 'Tax invoice — combined bill');
+  } else {
+    const s = bill.sections.find((x) => x.key === which);
+    if (!s?.lines.length) return false;
+    html = doc([s], `${s.title} bill`);
+  }
+  printHTML(html);
+  return true;
+}

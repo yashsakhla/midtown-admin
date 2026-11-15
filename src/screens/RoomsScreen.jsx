@@ -48,6 +48,7 @@ export default function RoomsScreen() {
         <span><i style={{ background: 'var(--green)' }} />Vacant {countRooms(db, 'vacant')}</span>
         <span><i style={{ background: 'var(--red)' }} />Occupied {countRooms(db, 'occupied')}</span>
         <span><i style={{ background: 'var(--orange)' }} />To clean {countRooms(db, 'dirty')}</span>
+        <span><i style={{ background: '#7A6AB8' }} />Maintenance {countRooms(db, 'maintenance')}</span>
         <span><i style={{ background: '#B8C2CE' }} />Blocked {countRooms(db, 'ooo')}</span>
       </div>
 
@@ -71,7 +72,7 @@ export default function RoomsScreen() {
         + Add a new floor
       </button>
       <p style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 10 }}>
-        Tariffs — {Object.entries(db.tariff).map(([t, r]) => `${t} ${money(r)}`).join(' · ')}
+        Single / double — {[...new Map(db.rooms.map((r) => [r.type, r])).values()].map((r) => `${r.type} ${money(r.singleRate)}/${money(r.doubleRate)}`).join(' · ')}
       </p>
     </>
   );

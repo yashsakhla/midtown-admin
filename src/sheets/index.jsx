@@ -1,26 +1,35 @@
 import { useHotel } from '../store/HotelContext';
 import {
-  CloseDaySheet, EditEntrySheet, EntrySheet, EntryViewSheet,
+  CloseDaySheet, EditEntrySheet, StartDaySheet, EntrySheet, EntryViewSheet,
   OpeningBalanceSheet, WorkingDateSheet
 } from './EntrySheets';
 import { EditGuestSheet, GuestsSheet } from './GuestSheets';
 import {
   AddBookingSheet, BookingsSheet, BookingViewSheet, ExpensesSheet, ExportSheet,
-  GstInvoiceSheet, InventorySheet, KotSheet, OnlineOrderSheet, StaffSheet
+  AddMenuItemSheet, AddStaffSheet, AddStockSheet, GstInvoiceSheet, InventorySheet, KotSheet, OnlineOrderSheet, StaffSheet
 } from './OpsSheets';
 import RequestSheet from './RequestSheet';
-import { AddRoomSheet, CheckInSheet, CheckOutSheet, RoomSheet } from './RoomSheets';
+import { CheckOutSheet } from './CheckOutSheet';
+import { CustomerSheet, CustomersSheet } from './CustomerSheets';
+import { AddGuestSheet, AddRoomSheet, CheckInSheet, EditRoomSheet, MaintenanceSheet, RoomSheet, ShiftRoomSheet } from './RoomSheets';
 
 const SHEETS = {
   room: RoomSheet,
   addRoom: AddRoomSheet,
   checkIn: CheckInSheet,
   checkOut: CheckOutSheet,
+  shiftRoom: ShiftRoomSheet,
+  addGuest: AddGuestSheet,
+  editRoom: EditRoomSheet,
+  maintenance: MaintenanceSheet,
+  customers: CustomersSheet,
+  customer: CustomerSheet,
   entry: EntrySheet,
   entryView: EntryViewSheet,
   editEntry: EditEntrySheet,
   openingBalance: OpeningBalanceSheet,
   closeDay: CloseDaySheet,
+  startDay: StartDaySheet,
   workingDate: WorkingDateSheet,
   kot: KotSheet,
   onlineOrder: OnlineOrderSheet,
@@ -28,6 +37,9 @@ const SHEETS = {
   booking: AddBookingSheet,
   bookingView: BookingViewSheet,
   inventory: InventorySheet,
+  addStock: AddStockSheet,
+  addStaff: AddStaffSheet,
+  addMenuItem: AddMenuItemSheet,
   staff: StaffSheet,
   expenses: ExpensesSheet,
   invoice: GstInvoiceSheet,

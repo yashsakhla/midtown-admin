@@ -35,12 +35,13 @@ const qs = (params) => {
 
 async function raw(method, path, { body, params, auth = true } = {}) {
   const headers = { Accept: 'application/json' };
-  if (body !== undefined) headers['Content-Type'] = 'application/json';
+  const isForm = typeof FormData !== 'undefined' && body instanceof FormData;
+  if (body !== undefined && !isForm) headers['Content-Type'] = 'application/json';
   if (auth && session?.accessToken) headers.Authorization = `Bearer ${session.accessToken}`;
   let res;
   try {
     res = await fetch(BASE + path + qs(params), {
-      method, headers, body: body !== undefined ? JSON.stringify(body) : undefined
+      method, headers, body: body === undefined ? undefined : isForm ? body : JSON.stringify(body)
     });
   } catch {
     throw new ApiError('Cannot reach the server', 0);
@@ -85,6 +86,8 @@ export const api = {
   get: (path, params, opts) => request('GET', path, { ...opts, params }),
   post: (path, body, opts) => request('POST', path, { ...opts, body: body ?? {} }),
   patch: (path, body) => request('PATCH', path, { body: body ?? {} }),
+  /** Multipart upload (documents). The browser sets the boundary header. */
+  upload: (path, form) => request('POST', path, { body: form }),
   put: (path, body) => request('PUT', path, { body: body ?? {} }),
   del: (path) => request('DELETE', path)
 };

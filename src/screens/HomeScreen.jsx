@@ -3,41 +3,48 @@ import Card from '../components/Card';
 import { Kpi, KpiGrid } from '../components/Kpi';
 import ListRow from '../components/ListRow';
 import Pill from '../components/Pill';
+import RequestRow, { isPendingRequest } from '../components/RequestRow';
 import RoomCard from '../components/RoomCard';
-import { REQUEST_STATUS, requestType } from '../lib/requests';
-import { money } from '../lib/format';
 import {
-  cashInHand, countRooms, floors, lowStock, occupancyPct, totalReceipt
+  countRooms, floors, lowStock, occupancyPct
 } from '../lib/selectors';
 import { useHotel } from '../store/HotelContext';
 
+const MAX_HOME_REQUESTS = 7;
+
 export default function HomeScreen() {
   const { db, setTab, openSheet, actions } = useHotel();
-  const open = db.requests.filter((r) => r.status !== 'DONE' && r.stayActive);
-  const closed = db.requests.filter((r) => !open.includes(r)).slice(0, 6);
+  // Today's requests of every kind, plus older ones only while still pending.
+  const shown = db.requests.filter((r) => r.date === db.date || (r.date < db.date && isPendingRequest(r)));
+  const visible = shown.slice(0, MAX_HOME_REQUESTS);
+  const pendingReq = shown.filter(isPendingRequest).length;
+  const doneReq = shown.filter((r) => r.status === 'DONE').length;
 
   const arrivals = db.bookings.filter((b) => b.status === 'Arriving').length;
   const upcoming = db.bookings.filter((b) => b.status !== 'Cancelled');
   const low = lowStock(db);
+  const foodOrders = (db.kots?.length || 0) + (db.online?.length || 0);
 
   return (
     <>
       <div className="hero">
         <img src={HERO} alt="The Midtown Hotel" />
         <div className="ov">
-          <div style={{ color: 'var(--gold)', fontSize: 12, fontWeight: 600 }}>Welcome to</div>
+          <div className="eyebrow">Welcome to</div>
           <h2>The Midtown Hotel</h2>
           <p>
-            {countRooms(db, 'occupied')} occupied · {arrivals} arrivals · {money(totalReceipt(db))} collected
+            {countRooms(db, 'occupied')} occupied · {arrivals} arrivals · {pendingReq} pending requests
           </p>
         </div>
+        <div className="quote"><i />“Hospitality makes every stay a story worth sharing.”</div>
       </div>
 
       <KpiGrid>
-        <Kpi value={`${occupancyPct(db)}%`} label="Occupancy today" />
-        <Kpi value={money(totalReceipt(db))} label="Total receipt" />
-        <Kpi value={money(cashInHand(db))} label="Cash in hand" />
-        <Kpi value={countRooms(db, 'dirty')} label="Rooms to clean" />
+        <Kpi icon="users" tone="green" value={`${occupancyPct(db)}%`} label="Occupancy" note={`${countRooms(db, 'occupied')} of ${db.rooms.length} rooms occupied`} onClick={() => setTab('rooms')} />
+        <Kpi icon="broom" tone="red" value={countRooms(db, 'dirty')} label="Rooms to clean" note="housekeeping pending" onClick={() => setTab('rooms')} />
+        <Kpi icon="bell" tone="orange" value={shown.length} label="Service requests" note="today + old pending" breakdown={[['Pending', pendingReq], ['Completed', doneReq]]} onClick={() => document.getElementById('guest-requests')?.scrollIntoView({ behavior: 'smooth', block: 'start' })} />
+        <Kpi icon="food" tone="blue" value={foodOrders} label="Food orders" note="room service + online today" onClick={() => setTab('food')} />
+        <Kpi icon="calendar" tone="gold" value={arrivals} label="Arrivals today" note="OTA and phone bookings" onClick={() => setTab('bookings')} />
       </KpiGrid>
 
       <Card
@@ -59,38 +66,23 @@ export default function HomeScreen() {
         ))}
       </Card>
 
-      <Card title={`Guest requests${open.length ? ` (${open.length})` : ''}`}>
-        {open.length ? open.map((r) => {
-          const t = requestType(r.key, r.label);
-          return (
-            <ListRow key={r.id}>
-              <div className="t">
-                <b>{t.icon} {t.label} · Room {r.room}</b>
-                <span>{r.guest}{r.phone ? ` · ${r.phone}` : ''} · In-house{r.checkOut ? ` until ${r.checkOut}` : ''}</span>
-                {r.note && <span style={{ color: 'var(--ink)' }}>“{r.note}”</span>}
-                <span>Sent {r.time}{r.date && r.date !== db.date ? ` (${r.date})` : ''}</span>
-              </div>
-              <div style={{ display: 'grid', gap: 6, justifyItems: 'end' }}>
-                <Pill tone={REQUEST_STATUS[r.status]?.tone}>{REQUEST_STATUS[r.status]?.label}</Pill>
-                <button className="btn sm p" onClick={() => openSheet('request', { id: r.id })}>View request</button>
-              </div>
+      <div id="guest-requests">
+        <Card
+          title={`Service requests${shown.length ? ` (${shown.length})` : ''}`}
+          action={<button className="btn sm" onClick={() => setTab('requests')}>Check old requests</button>}
+        >
+          {visible.length ? visible.map((r) => <RequestRow key={r.id} r={r} />) : (
+            <ListRow><span style={{ color: 'var(--muted)' }}>No service requests today.</span></ListRow>
+          )}
+          {shown.length > MAX_HOME_REQUESTS && (
+            <ListRow>
+              <button className="btn sm" onClick={() => setTab('requests')}>
+                Show more ({shown.length - MAX_HOME_REQUESTS})
+              </button>
             </ListRow>
-          );
-        }) : (
-          <ListRow><span style={{ color: 'var(--muted)' }}>No pending guest requests.</span></ListRow>
-        )}
-        {closed.map((r) => (
-          <ListRow key={r.id} onClick={() => openSheet('request', { id: r.id })}>
-            <div className="t" style={{ opacity: 0.7 }}>
-              <b>{requestType(r.key, r.label).label}{r.room ? ` · Room ${r.room}` : ''}</b>
-              <span>{r.remark || r.note || 'No remark'} · {r.time}</span>
-            </div>
-            <Pill tone={REQUEST_STATUS[r.expired ? 'EXPIRED' : r.status]?.tone}>
-              {r.expired ? 'Expired — guest checked out' : REQUEST_STATUS[r.status]?.label}
-            </Pill>
-          </ListRow>
-        ))}
-      </Card>
+          )}
+        </Card>
+      </div>
 
       <Card title="Arrivals today">
         {upcoming.length ? upcoming.map((b) => (
@@ -98,7 +90,7 @@ export default function HomeScreen() {
             key={b.id}
             title={b.guest}
             sub={`${b.src} · ${b.type} · ${b.pax} guests`}
-            right={<Pill tone={b.pay === 'Prepaid' ? 'g' : 'n'}>{b.pay}</Pill>}
+            right={<Pill tone={b.pay === 'Prepaid' ? 'g' : 'n'}>{b.pay || 'Not opted'}</Pill>}
           />
         )) : (
           <ListRow><span style={{ color: 'var(--muted)' }}>No arrivals pending.</span></ListRow>
