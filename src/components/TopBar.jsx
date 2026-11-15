@@ -11,7 +11,7 @@ const SUBTITLES = {
 };
 const subtitle = (tab) => SUBTITLES[tab] || PAGE[tab][0];
 
-export default function TopBar() {
+export default function TopBar({ onMenu = () => {} }) {
   const { tab, openSheet, signOut, db } = useHotel();
   const h = new Date().getHours();
   const greet = h < 12 ? 'Good morning' : h < 17 ? 'Good afternoon' : 'Good evening';
@@ -20,6 +20,9 @@ export default function TopBar() {
 
   return (
     <header className="hd">
+      <button type="button" className="menu-btn" aria-label="Open menu" onClick={onMenu}>
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16" /></svg>
+      </button>
       <div className="dot" aria-hidden="true">&#10052;</div>
       <div className="hd-m" style={{ flex: 1 }}>
         <h1>The Midtown Hotel</h1>

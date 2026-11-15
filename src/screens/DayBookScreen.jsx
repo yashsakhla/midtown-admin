@@ -114,14 +114,21 @@ export default function DayBookScreen() {
                 <div className="t">
                   <b>{e.guest || e.type}</b>
                   <span>
-                    {e.type} · {e.mode}{e.narration ? ` · ${e.narration}` : ''}
+                    {e.type} · {e.udhari ? 'Udhari' : e.mode}{e.narration ? ` · ${e.narration}` : ''}
                     {auto && <> · <em style={{ fontStyle: 'normal', color: 'var(--blue)' }}>{sourceLabel(e.source)}</em></>}
                   </span>
                   {e.shortfall > 0 && <span style={{ color: 'var(--red)', fontWeight: 600 }}>Short received {money(e.shortfall)}</span>}
                 </div>
-                <div className="num" style={{ color: e.dc === 'credit' ? 'var(--green)' : 'var(--red)' }}>
-                  {e.dc === 'debit' ? '−' : ''}{money(e.amount)}
-                </div>
+                {e.udhari ? (
+                  <div style={{ textAlign: 'right' }}>
+                    <div className="num" style={{ color: '#A55A00' }}>{money(e.amount)}</div>
+                    <div style={{ fontSize: 10.5, color: 'var(--muted)' }}>on credit · not paid</div>
+                  </div>
+                ) : (
+                  <div className="num" style={{ color: e.dc === 'credit' ? 'var(--green)' : 'var(--red)' }}>
+                    {e.dc === 'debit' ? '−' : ''}{money(e.amount)}
+                  </div>
+                )}
               </ListRow>
             );
           }) : (

@@ -339,3 +339,41 @@ table{width:100%;border-collapse:collapse}td{padding:9px 0;border-bottom:1px sol
 
 .room.maintenance{border-color:#D9D2EE;background:#F4F1FB}.room.maintenance .rs{background:#E4DEF5;color:#5B4A9C}
 .room.maintenance .art{filter:grayscale(1);opacity:.6}.room.maintenance .badge{background:#7A6AB8}
+
+/* Dashboard "Room board": hotel photo behind the room tiles, no card background */
+.board{position:relative;border-radius:14px;overflow:hidden;margin-bottom:12px;padding:0 0 4px;
+ background:linear-gradient(rgba(10,12,20,.38),rgba(10,12,20,.55)),url('./assets/hotel-Bg.jpeg') center/cover no-repeat}
+.board .h{display:flex;align-items:center;gap:8px;padding:13px 14px}
+.board .h h3{color:#fff;font-size:14.5px}
+.board .bd{padding:4px 14px 12px}
+.board .fl{font-size:12px;color:#fff;font-weight:700;margin:6px 0;text-shadow:0 1px 3px rgba(0,0,0,.6)}
+
+/* Phones: the bottom tab bar becomes a slide-in sidebar (opened from the header menu button) */
+.menu-btn,.nav-close,.navscrim{display:none}
+@media(max-width:1023px){
+  .menu-btn{display:grid;place-items:center;width:38px;height:38px;flex:none;background:#22221A;border:1px solid #2C2C22;border-radius:10px;cursor:pointer}
+  .menu-btn svg{width:20px;height:20px;stroke:#EDE7D8;fill:none;stroke-width:2;stroke-linecap:round}
+  .hd > .dot{display:none}
+  .navscrim{display:block;position:absolute;inset:0;background:rgba(10,10,6,.55);opacity:0;pointer-events:none;transition:opacity .2s;z-index:60}
+  .navscrim.on{opacity:1;pointer-events:auto}
+  .tb{position:absolute;top:0;bottom:0;left:0;right:auto;width:min(282px,82vw);z-index:70;display:flex;flex-direction:column;gap:2px;
+   background:#16160F;border:0;border-right:1px solid #2C2C22;padding:0 12px 12px;overflow-y:auto;
+   transform:translateX(-102%);transition:transform .25s cubic-bezier(.3,.8,.3,1);box-shadow:none}
+  .tb.open{transform:none;box-shadow:12px 0 40px rgba(0,0,0,.45)}
+  .tb .brand{display:block;position:relative;text-align:center;padding:24px 8px 12px}
+  .tb .brand .dot{width:34px;height:34px;margin:0 auto 8px;display:grid;place-items:center;color:var(--gold);font-size:26px}
+  .tb .brand h1{font-size:16.5px;color:#F5F2EA}
+  .tb .brand p{margin:3px 0 0;font-size:11px;color:#6E6B5E}
+  .tb .nav-close{display:block;position:absolute;top:14px;right:0;width:32px;height:32px;padding:0;background:none;border:0;color:#B9B6A8;font-size:18px}
+  .tb .grp{display:block;margin:16px 10px 6px;font-size:10.5px;color:#6E6B5E;font-weight:700;letter-spacing:.04em;text-transform:uppercase}
+  .grp-wrap{display:flex;flex-direction:column;gap:2px}
+  .tb button{flex-direction:row;justify-content:flex-start;gap:12px;padding:11px 12px;border-radius:10px;font-size:14px;font-weight:500;color:#B9B6A8}
+  .tb button.dsk{display:flex}
+  .tb button.on{background:#2A2A1F;color:#F5F2EA;font-weight:600}
+  .tb svg{width:18px;height:18px;stroke-width:1.7}
+  .tb .lbl-m{display:none}.tb .lbl-d{display:inline}
+  .tb .who{display:flex;align-items:center;gap:10px;margin-top:auto;padding:12px;border-top:1px solid #2A2A20;color:#D6D2C6;font-size:13px}
+  .tb .who i{width:30px;height:30px;border-radius:50%;background:#22221A;color:var(--gold);display:grid;place-items:center;font-style:normal;font-size:11.5px;font-weight:700}
+  .scr{padding-bottom:90px}
+  .fab{bottom:24px}
+}

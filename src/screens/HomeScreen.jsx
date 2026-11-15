@@ -47,24 +47,24 @@ export default function HomeScreen() {
         <Kpi icon="calendar" tone="gold" value={arrivals} label="Arrivals today" note="OTA and phone bookings" onClick={() => setTab('bookings')} />
       </KpiGrid>
 
-      <Card
-        title="Room board"
-        action={<button className="btn sm" onClick={() => setTab('rooms')}>Open</button>}
-        body
-      >
-        {floors(db).map((f) => (
-          <div key={f}>
-            <div style={{ fontSize: 12, color: 'var(--muted)', fontWeight: 700, margin: '6px 0' }}>
-              Floor {f}
+      <section className="board">
+        <div className="h">
+          <h3>Room board</h3>
+          <span style={{ marginLeft: 'auto' }}><button className="btn sm" onClick={() => setTab('rooms')}>Open</button></span>
+        </div>
+        <div className="bd">
+          {floors(db).map((f) => (
+            <div key={f}>
+              <div className="fl">Floor {f}</div>
+              <div className="rooms">
+                {db.rooms.filter((r) => r.floor === f).map((r) => (
+                  <RoomCard key={r.no} room={r} onClick={(no) => openSheet('room', { no })} />
+                ))}
+              </div>
             </div>
-            <div className="rooms">
-              {db.rooms.filter((r) => r.floor === f).map((r) => (
-                <RoomCard key={r.no} room={r} onClick={(no) => openSheet('room', { no })} />
-              ))}
-            </div>
-          </div>
-        ))}
-      </Card>
+          ))}
+        </div>
+      </section>
 
       <div id="guest-requests">
         <Card

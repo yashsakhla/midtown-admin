@@ -80,7 +80,7 @@ export function HotelProvider({ children }) {
       guard(api.get('/staff')),
       guard(api.get('/expenses', { date })),
       guard(api.get('/invoices', { date })),
-      guard(api.get('/customers', { limit: 500 })),
+      guard(api.get('/customers', { limit: 200 })),
       guard(api.get('/expenses', { status: 'DUE' }))
     ]);
 
@@ -380,6 +380,18 @@ export function HotelProvider({ children }) {
       await api.post(`/stays/${room.stayId}/checkout`, { businessDate: businessDate() });
     }, 'Checked out — sent to housekeeping');
   }, [run]);
+
+  /** Charges extra nights past the booked check-out date and extends the stay to cover them. */
+  const addExtraNights = useCallback((no, nights, reason) => {
+    if (dayBlocked()) return false;
+    const room = roomOf(no);
+    const n = Math.max(1, Math.round(Number(nights) || 0));
+    if (!room?.stayId) return false;
+    return run(() => api.post(`/stays/${room.stayId}/extra-nights`, {
+      nights: n, rate: dec(room.stayRate), businessDate: businessDate(), time: now(),
+      reason: reason || 'Stayed past check-out date'
+    }), `${n} extra night${n > 1 ? 's' : ''} added to the folio`, { close: false });
+  }, [run, toast]);
 
   const updateGuestStay = useCallback((no, form) => {
     const room = roomOf(no);
@@ -688,7 +700,7 @@ export function HotelProvider({ children }) {
       lookupCustomer, loadCustomer, uploadCustomerDoc,
       addEntry, updateEntry, deleteEntry, closeDay,
       settleBill, sendKot, addOnlineOrder,
-      addBooking, adjustStock, setAttendance, addExpense,
+      addBooking, adjustStock, setAttendance, addExpense, addExtraNights,
       payExpenseDue, customerCredit, addMenuItem, addStock, addStaff,
       updateGuestStay, saveInvoice, updateRequest
     }
@@ -697,7 +709,7 @@ export function HotelProvider({ children }) {
     setDate, viewDate, setOpening, startDay, addRoom, updateRoom, setRoomStatus, markAllClean, checkIn, checkOut, shiftRoom, addGuest,
     lookupCustomer, loadCustomer, uploadCustomerDoc,
     addEntry, updateEntry, deleteEntry, closeDay, settleBill, sendKot,
-    addOnlineOrder, addBooking, adjustStock, setAttendance, addExpense,
+    addOnlineOrder, addBooking, adjustStock, setAttendance, addExpense, addExtraNights,
     payExpenseDue, customerCredit, addMenuItem, addStock, addStaff,
     updateGuestStay, saveInvoice, updateRequest
   ]);

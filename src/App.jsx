@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import TabBar from './components/TabBar';
 import Toast from './components/Toast';
 import TopBar from './components/TopBar';
@@ -24,6 +25,7 @@ const SCREENS = {
 
 export default function App() {
   const { tab, sheet, openSheet, closeSheet, authed, loading } = useHotel();
+  const [navOpen, setNavOpen] = useState(false);
 
   if (!authed) return <div className="phone"><LoginScreen /></div>;
 
@@ -33,7 +35,7 @@ export default function App() {
   return (
     <>
       <div className="phone">
-        <TopBar />
+        <TopBar onMenu={() => setNavOpen(true)} />
 
         <main className={`scr scr-${tab}`} key={tab}>
           {loading ? <div className="loading">Loading…</div> : Screen ? <Screen /> : <PageScreen id={tab} />}
@@ -44,7 +46,8 @@ export default function App() {
         <div className={`scrim${sheet ? ' on' : ''}`} onClick={closeSheet} />
         <SheetHost />
         <Toast />
-        <TabBar />
+        <div className={`navscrim${navOpen ? ' on' : ''}`} onClick={() => setNavOpen(false)} />
+        <TabBar open={navOpen} onClose={() => setNavOpen(false)} />
       </div>
 
       {/* Print target for slips, invoices and reports. */}

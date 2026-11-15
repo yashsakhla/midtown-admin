@@ -130,7 +130,8 @@ export function mapEntry(e, roomById) {
 const mapLine = (l, roomById = {}) => ({
   ...mapEntry(l, roomById),
   id: l.id ?? l.entryId,
-  kind: String(l.kind || (String(l.source).toUpperCase() === 'EXPENSE' ? 'expense' : 'entry')).toLowerCase()
+  kind: String(l.kind || (String(l.source).toUpperCase() === 'EXPENSE' ? 'expense' : 'entry')).toLowerCase(),
+  onCredit: !!(l.onCredit ?? l.isCredit)
 });
 
 /**
@@ -140,19 +141,25 @@ const mapLine = (l, roomById = {}) => ({
  */
 export function buildRegister(daybook, entries, expenses, rawRegister, roomById) {
   let lines;
+  // Udhari expenses: we owe the vendor, no money has left the till yet.
+  const creditIds = new Set(expenses.filter((x) => x.onCredit).map((x) => String(x.id)));
   if (Array.isArray(rawRegister)) {
     lines = rawRegister.map((l) => mapLine(l, roomById));
+    lines.forEach((l) => {
+      const isExp = l.kind === 'expense' || l.source === 'EXPENSE';
+      if (isExp && (l.onCredit || creditIds.has(String(l.id)) || creditIds.has(String(l.id).replace(/^x-/, '')))) l.udhari = true;
+    });
   } else {
     lines = [
       ...entries.map((e) => ({ ...e, kind: 'entry' })),
       ...expenses.map((x) => ({
-        id: 'x-' + x.id, kind: 'expense', time: x.time, room: '', guest: x.vendor || '', phone: '', vehicle: '',
+        id: 'x-' + x.id, kind: 'expense', udhari: x.onCredit, time: x.time, room: '', guest: x.vendor || '', phone: '', vehicle: '',
         type: 'Expense', mode: x.mode, dc: 'debit', amount: x.amount, narration: x.head + (x.narration ? ` · ${x.narration}` : ''),
         source: 'EXPENSE', shortfall: 0
       }))
     ];
     if (daybook) {
-      const sum = (dc) => lines.filter((t) => t.dc === dc).reduce((s, t) => s + t.amount, 0);
+      const sum = (dc) => lines.filter((t) => t.dc === dc && !t.udhari).reduce((s, t) => s + t.amount, 0);
       const dCr = n(daybook.credits) - sum('credit');
       const dDr = n(daybook.debits) - sum('debit');
       const gap = (id, dc, amount, type) => ({
@@ -167,7 +174,8 @@ export function buildRegister(daybook, entries, expenses, rawRegister, roomById)
 }
 
 export function buildCash(daybook, register) {
-  const txns = register.map((l) => ({
+  // Udhari lines are on the register for reference but never move cash, so they stay out of the totals.
+  const txns = register.filter((l) => !l.udhari).map((l) => ({
     id: l.id, head: l.type, mode: l.mode, dc: l.dc, amount: l.amount, narration: l.narration || l.guest
   }));
   const d = daybook || {};

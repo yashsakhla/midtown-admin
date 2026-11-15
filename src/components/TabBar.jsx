@@ -7,12 +7,14 @@ const TAB_LABEL = {
 };
 
 /** Bottom tab bar on phones; grouped sidebar (brand, sections, user) on desktop. */
-export default function TabBar() {
-  const { tab, setTab } = useHotel();
+export default function TabBar({ open = false, onClose = () => {} }) {
+  const { tab, setTab: pick } = useHotel();
+  const setTab = (id) => { pick(id); onClose(); };
 
   return (
-    <nav className="tb" aria-label="Main sections">
+    <nav className={`tb${open ? ' open' : ''}`} aria-label="Main sections">
       <div className="brand">
+        <button type="button" className="nav-close" aria-label="Close menu" onClick={onClose}>&#10005;</button>
         <div className="dot" aria-hidden="true">&#10052;</div>
         <h1>The Midtown Hotel</h1>
         <p>Front desk &amp; back office</p>

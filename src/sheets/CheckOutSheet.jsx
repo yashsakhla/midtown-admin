@@ -4,7 +4,7 @@ import Pill from '../components/Pill';
 import Sheet from '../components/Sheet';
 import { api } from '../api/client';
 import { buildBill, manualBill, SECTION_TITLES } from '../lib/billing';
-import { money } from '../lib/format';
+import { fmtDate, money } from '../lib/format';
 import { printBill } from '../lib/print';
 import { REQUEST_STATUS } from '../lib/requests';
 import { PAYMENT_MODES } from '../lib/selectors';
@@ -46,6 +46,19 @@ export function CheckOutSheet({ no }) {
   useEffect(() => {
     if (!payTouched) setPayments((ps) => (ps.length === 1 ? [{ ...ps[0], amount: String(net) }] : ps));
   }, [net, payTouched]);
+
+  /* ---- check-out date: due today, or already passed ---- */
+  const asOf = db.day?.status === 'OPEN' && db.day.businessDate ? db.day.businessDate : db.date;
+  const endDate = room?.checkOut || '';
+  const lateNights = endDate ? Math.max(0, Math.round((new Date(asOf) - new Date(endDate)) / 86400000)) : 0;
+  const dueToday = !!endDate && endDate === asOf;
+  const rate = room?.stayRate || 0;
+  const [busyNight, setBusyNight] = useState(false);
+  const chargeNights = async (n, reason) => {
+    setBusyNight(true);
+    await actions.addExtraNights(no, n, reason);
+    setBusyNight(false);
+  };
 
   if (!room) return null;
   const requests = db.requests.filter((r) => r.stayId === room.stayId);
@@ -92,15 +105,37 @@ export function CheckOutSheet({ no }) {
     <Sheet
       title={`Check out — Room ${no}`}
       footer={
-        <button className="btn p" onClick={() => actions.checkOut(no, {
+        <button className="btn p" disabled={lateNights > 0} onClick={() => actions.checkOut(no, {
           payments, narration, net,
           adjustments: adjustments.map((a) => ({ kind: a.kind, value: Number(a.value) || 0, section: a.section, reason: a.reason, amount: Math.round(adjAmount(a) * 100) / 100 })).filter((a) => a.amount > 0)
         })}>
-          Settle &amp; check out
+          {lateNights > 0 ? `Add ${lateNights} extra night${lateNights > 1 ? 's' : ''} to settle` : 'Settle & check out'}
         </button>
       }
     >
       <Field label="Guest" value={room.guest || ''} disabled readOnly />
+
+      {lateNights > 0 && (
+        <div style={{ borderLeft: '4px solid var(--red)', background: '#FDF2F1', color: 'var(--red)', borderRadius: 11, padding: '10px 12px', fontSize: 13, margin: '0 0 10px' }}>
+          <b>Check-out date passed</b> — the stay ended on {fmtDate(endDate)}, {lateNights} night{lateNights > 1 ? 's' : ''} ago.
+          <div style={{ margin: '4px 0 8px' }}>
+            Extra nights: {lateNights} × {money(rate)} = <b>{money(lateNights * rate)}</b>. Add this to the folio before you can settle and check out.
+          </div>
+          <button type="button" className="btn p" disabled={busyNight} onClick={() => chargeNights(lateNights, 'Stayed past check-out date')}>
+            {busyNight ? 'Adding…' : `Add ${lateNights} extra night${lateNights > 1 ? 's' : ''} · ${money(lateNights * rate)}`}
+          </button>
+        </div>
+      )}
+      {dueToday && (
+        <div style={note('var(--ow)', '#A55A00')}>
+          <b>Check-out is today.</b> If the guest is staying on or checking out late, you can charge one more night at {money(rate)}.
+          <div style={{ marginTop: 6 }}>
+            <button type="button" className="btn sm" disabled={busyNight} onClick={() => chargeNights(1, 'Late check-out / extra night')}>
+              {busyNight ? 'Adding…' : `Add 1 extra night · ${money(rate)}`}
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* ------------------------------------------------ generated bill */}
       <h3 style={{ margin: '4px 0 8px', fontSize: 14 }}>Generated bill</h3>
