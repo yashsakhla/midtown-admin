@@ -54,7 +54,10 @@ export function CustomersSheet() {
             </div>
             <div style={{ textAlign: 'right' }}>
               <div className="num" style={{ color: 'var(--ink)' }}>{money(c.spend)}</div>
-              {c.credit > 0 ? <Pill tone="r">Owes {money(c.credit)}</Pill> : c.hasDoc ? <Pill tone="g">ID on file</Pill> : <Pill tone="o">No ID</Pill>}
+              <div style={{ fontSize: 11.5, margin: '2px 0 4px', fontWeight: 600, color: c.credit > 0 ? 'var(--red)' : 'var(--muted)' }}>
+                {c.credit > 0 ? `Due ${money(c.credit)}` : 'No dues'}
+              </div>
+              {c.hasDoc ? <Pill tone="g">ID on file</Pill> : <Pill tone="o">No ID</Pill>}
             </div>
           </ListRow>
         )) : (

@@ -1,12 +1,16 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
-import { api, getSession, login, logout, setAuthLostHandler } from '../api/client';
+import { api, getSession, isAdminSession, login, logout, setAuthLostHandler, uploadImage } from '../api/client';
 import {
   buildCash, buildRegister, mapDay, dcOut, dec, emptyDb, list, mapBooking, mapCustomer, mapEntry, mapExpense, mapInvoice, mapMenu,
-  mapOnline, mapRequest, mapRoom, mapRoomTypes, mapStaff, mapStock, modeOut, one, roomStatusOut
+  mapKot, mapLaundry, mapOnline, mapRequest, mapRoom, mapRoomTypes, mapStaff, mapStock, modeOut, one, roomStatusOut
 } from '../api/mappers';
+import { normMark } from '../lib/attendance';
+import { bookingRoomMatch } from '../lib/availability';
+import { bookingState, bookingToday } from '../lib/bookings';
 import { addDays, now, today } from '../lib/format';
 import { REQUEST_EXTRAS } from '../lib/requests';
 import { DOC_API_TYPE } from '../lib/customers';
+import { laundryTotals } from '../lib/laundry';
 import { rateFor } from '../lib/rooms';
 
 /** Optional room details: blank text is sent as empty, blank numbers as null. */
@@ -25,8 +29,8 @@ const errEntryId = (e) => e?.data?.entryId ?? e?.data?.error?.entryId ?? e?.data
 
 export function HotelProvider({ children }) {
   const [db, setDb] = useState(emptyDb);
-  const [kots, setKots] = useState([]);           // no list endpoint yet: session-only kitchen queue
-  const [att, setAtt] = useState({});             // attendance has PUT only: remembered per session
+  const [att, setAtt] = useState({});             // staffId -> P | A | L for the open business day
+  const [attVersion, setAttVersion] = useState(0);  // bumps after every attendance change so calendars refresh
   const [authed, setAuthed] = useState(() => !!getSession());
   const [loading, setLoading] = useState(false);
   const [tab, setTab] = useState('home');
@@ -69,7 +73,7 @@ export function HotelProvider({ children }) {
     const day = dayR.ok ? mapDay(dayR.v) : null;
     if (!pickedRef.current && day?.businessDate) dateRef.current = day.businessDate;
     const date = dateRef.current;
-    const [entriesR, daybookR, registerR, menuR, onlineR, bookingsR, stockR, staffR, expensesR, invoicesR, customersR, payablesR] = await Promise.all([
+    const [entriesR, daybookR, registerR, menuR, onlineR, bookingsR, stockR, staffR, expensesR, invoicesR, customersR, payablesR, kotsR, laundryR, attendR] = await Promise.all([
       guard(api.get('/entries', { date })),
       guard(api.get('/daybook', { date })),
       guard(api.get('/daybook/register', { date })),
@@ -81,8 +85,15 @@ export function HotelProvider({ children }) {
       guard(api.get('/expenses', { date })),
       guard(api.get('/invoices', { date })),
       guard(api.get('/customers', { limit: 200 })),
-      guard(api.get('/expenses', { status: 'DUE' }))
+      guard(api.get('/expenses', { status: 'DUE' })),
+      guard(api.get('/kots')),
+      guard(api.get('/laundry/orders')),
+      guard(api.get('/attendance', { date: day?.status === 'OPEN' && day.businessDate ? day.businessDate : date }))
     ]);
+    if (attendR.ok) {
+      setAtt(Object.fromEntries(list(attendR.v)
+        .map((r) => [String(r.staffId ?? r.staff?.id), normMark(r.mark ?? r.status)]).filter(([, m]) => m)));
+    }
 
     setDb((prev) => {
       const next = { ...prev, date, day: dayR.ok ? day : prev.day };
@@ -111,11 +122,32 @@ export function HotelProvider({ children }) {
       if (menuR.ok) next.menu = mapMenu(menuR.v);
       if (onlineR.ok) next.online = list(onlineR.v).map(mapOnline);
       if (bookingsR.ok) next.bookings = list(bookingsR.v).map((b) => mapBooking(b, typeById));
+      // Prebooking: a room held by a live booking. Its status shows "prebooked" only on the arrival day.
+      if (next.rooms.length) {
+        const todayStr = bookingToday(next);
+        next.rooms = next.rooms.map((r) => {
+          const pb = next.bookings
+            .filter((b) => bookingRoomMatch(b, r) && ['Arriving', 'Confirmed'].includes(bookingState(b, todayStr)))
+            .sort((a, b) => String(a.inD).localeCompare(String(b.inD)))[0];
+          const prebook = pb ? { id: pb.id, guest: pb.guest, phone: pb.phone, pax: pb.pax, inD: pb.inD, outD: pb.outD, today: pb.inD === todayStr } : null;
+          let status = r.status === 'prebooked' ? 'vacant' : r.status;
+          if (status === 'vacant' && prebook?.today) status = 'prebooked';
+          return { ...r, status, prebook };
+        });
+      }
       if (stockR.ok) next.stock = list(stockR.v).map(mapStock);
       if (staffR.ok) next.staff = list(staffR.v).map(mapStaff);
       if (customersR.ok) next.customers = list(customersR.v).map(mapCustomer);
       if (payablesR.ok) next.payables = list(payablesR.v).map(mapExpense).filter((x) => x.due > 0);
       if (invoicesR.ok) next.invoices = list(invoicesR.v).map(mapInvoice);
+      if (kotsR.ok) {
+        const byStay = Object.fromEntries(next.rooms.filter((r) => r.stayId).map((r) => [r.stayId, r]));
+        next.kots = list(kotsR.v).map((k) => mapKot(k, byStay));
+      }
+      if (laundryR.ok) {
+        const byStay = Object.fromEntries(next.rooms.filter((r) => r.stayId).map((r) => [r.stayId, r]));
+        next.laundry = list(laundryR.v).map((o) => mapLaundry(o, byStay));
+      }
       return next;
     });
     loadRequests();
@@ -124,6 +156,7 @@ export function HotelProvider({ children }) {
 
   const signOut = useCallback(() => {
     logout();
+    setIsAdmin(false);
     setAuthed(false);
     setDb(emptyDb());
     setSheet(null);
@@ -145,8 +178,12 @@ export function HotelProvider({ children }) {
     return () => window.clearInterval(t);
   }, [authed, loadRequests]);
 
+  const [isAdmin, setIsAdmin] = useState(() => isAdminSession());
+
   const signIn = useCallback(async (identifier, password) => {
     await login(identifier, password);
+    pickedRef.current = false;                  // start on the open business day
+    setIsAdmin(isAdminSession());
     setAuthed(true);
   }, []);
 
@@ -179,13 +216,12 @@ export function HotelProvider({ children }) {
 
   /* ------------------------------------------------------------------ rooms */
 
-  /** Uploads photos one by one (multipart, field "file"). */
+  /** Uploads photos to the media store and returns their URLs. */
+  const uploadUrls = (files = []) => Promise.all(files.map((f) => uploadImage(f)));
+
+  /** Uploads photos to the media store, then registers each URL on the record (JSON, no multipart). */
   const uploadAll = async (path, files = []) => {
-    for (const file of files) {
-      const fd = new FormData();
-      fd.append('file', file);
-      await api.upload(path, fd);
-    }
+    for (const url of await uploadUrls(files)) await api.post(path, { url });
   };
 
   /** `extra` carries the maintenance reason / expected-back date. */
@@ -216,6 +252,14 @@ export function HotelProvider({ children }) {
     }, `Room ${no} updated`);
   }, [run, toast]);
 
+  /** Admin only. The server refuses rooms that are occupied or have history. */
+  const deleteRoom = useCallback((no) => {
+    if (!isAdmin) { toast('Only an admin can delete a room'); return false; }
+    const r = roomOf(no);
+    if (!r) return false;
+    return run(() => api.del(`/rooms/${r.id}`), `Room ${no} deleted`);
+  }, [run, toast, isAdmin]);
+
   const markAllClean = useCallback(
     () => run(() => api.post('/rooms/mark-all-clean'), 'All rooms marked ready', { close: false }), [run]);
 
@@ -226,7 +270,9 @@ export function HotelProvider({ children }) {
     if (!single || !double) { toast('Set both the single and double price'); return false; }
     const type = dbRef.current.roomTypes.find((t) => t.name === room.type);
     return run(async () => {
-      const res = await api.post('/rooms', {
+      const images = await uploadUrls(room.images);
+      await api.post('/rooms', {
+      images,
       number: String(room.no), floor: Number(room.floor) || 1,
       category: room.category === 'AC' ? 'AC' : 'NON_AC',
       roomType: room.type, roomTypeId: type?.id,
@@ -234,7 +280,6 @@ export function HotelProvider({ children }) {
       features: room.features || [], ...roomDetails(room),
       rate: dec(single)                       // legacy field: single-occupancy price
       });
-      await uploadAll(`/rooms/${one(res, 'room')?.id}/images`, room.images);
     }, `Room ${room.no} added`);
   }, [run, toast]);
 
@@ -247,13 +292,14 @@ export function HotelProvider({ children }) {
     });
 
   /** Sends one identity document for a customer (multipart). */
-  const sendDocument = (customerId, doc) => {
-    if (!customerId) throw new Error('Customer was not created');
-    const fd = new FormData();
-    fd.append('type', DOC_API_TYPE[doc.type] || 'OTHER');
-    if (doc.number) fd.append('number', doc.number.trim());
-    fd.append('file', doc.file);
-    return api.upload(`/customers/${customerId}/documents`, fd);
+  const sendDocument = async (customerId, doc) => {
+    const fileUrl = await uploadImage(doc.file);   // upload first, so the file is stored even if the customer id is missing
+    if (!customerId) throw new Error('Customer id missing from the check-in response');
+    return api.post(`/customers/${customerId}/documents`, {
+      type: DOC_API_TYPE[doc.type] || 'OTHER',
+      number: doc.number ? doc.number.trim() : undefined,
+      fileUrl, fileName: doc.file.name
+    });
   };
 
   /** Finds a customer by phone: the server first, then the loaded list. */
@@ -316,17 +362,17 @@ export function HotelProvider({ children }) {
           groupKey, groupSize: picked.length, isGroupPrimary: i === 0,
           vehicle: form.vehicle && form.vehicle !== '—' ? form.vehicle : undefined,
           checkOut: form.checkOut || addDays(form.date, nights), nights,
-          guests, rate: dec(rateFor(rm, guests)), bookingId: null
+          guests, rate: dec(rateFor(rm, guests)), bookingId: i === 0 ? (form.bookingId ?? null) : null
         });
         const stay = one(res, 'stay');
-        customerId = customerId ?? stay?.customerId ?? one(res, 'customer')?.id;
+        customerId = customerId ?? stay?.customerId ?? stay?.customer?.id ?? one(res, 'customer')?.id ?? res?.customerId;
         // The advance is taken once, on the first room of the booking.
         if (i === 0 && amount > 0 && stay?.id) {
           await postPayment(stay.id, 'ADVANCE', amount, form.mode, form.narration || 'Advance at check-in');
         }
         if (i === 0 && form.doc?.file) {
           try { await sendDocument(customerId, form.doc); }
-          catch { warn = ' — document upload failed, add it from the customer profile'; }
+          catch (e) { console.error('Document upload failed', e); warn = ` — document upload failed (${e.message}), add it from the customer profile`; }
         }
       }
     }, null);
@@ -413,6 +459,14 @@ export function HotelProvider({ children }) {
       kind && amount ? `${form.payType} posted · stay updated` : 'Stay updated — no duplicate entry');
   }, [run]);
 
+  /** Admin only. Removes a stay made by mistake; the server voids its entries and frees the room. */
+  const deleteStay = useCallback((no) => {
+    if (!isAdmin) { toast('Only an admin can delete a stay'); return false; }
+    const room = roomOf(no);
+    if (!room?.stayId) return false;
+    return run(() => api.del(`/stays/${room.stayId}`), `Stay in room ${no} deleted`);
+  }, [run, toast, isAdmin]);
+
   /**
    * Internal room shift: the guest moves to another vacant room mid-stay.
    * The server re-prices the remaining nights and records the upgrade/downgrade.
@@ -433,10 +487,11 @@ export function HotelProvider({ children }) {
 
   /** Look at another date (read-only unless it is the open day). Pass '' to follow the open day again. */
   const viewDate = useCallback(async (date) => {
+    if (!isAdmin) date = '';                    // managers only ever see the open day
     pickedRef.current = !!date;
     if (date) dateRef.current = date;
     await reload();
-  }, [reload]);
+  }, [reload, isAdmin]);
 
   const setDate = useCallback(async (date) => {
     closeSheet();
@@ -529,17 +584,60 @@ export function HotelProvider({ children }) {
     if (!r?.stayId) { toast('That room has no active stay'); return false; }
     const waiterId = dbRef.current.staff.find((s) => s.name === waiter)?.id;
     return run(async () => {
-      const res = await api.post('/kots', {
+      await api.post('/kots', {
         stayId: r.stayId, tableLabel: null, billTo: 'ROOM', waiterId, note: '',
         items: items.map((c) => ({ menuItemId: c.id, qty: c.q, note: '' }))
       });
-      const kot = one(res, 'kot');
-      setKots((prev) => [{
-        id: kot?.id ?? Math.random().toString(36).slice(2), room, waiter,
-        items: items.map((c) => ({ n: c.n, q: c.q, p: c.p })), time: now(), status: 'Preparing'
-      }, ...prev]);
     }, 'Slip printed, charge added to folio');
   }, [run, toast]);
+
+  /** Preparing -> Ready -> Served, or Cancelled. */
+  const updateKotStatus = useCallback((id, status) =>
+    run(() => api.patch(`/kots/${id}`, { status: String(status).toUpperCase().replace(/ /g, '_') }),
+      status === 'Cancelled' ? 'Order cancelled' : `Order marked ${status.toLowerCase()}`, { close: false }), [run]);
+
+  /* ----------------------------------------------------------------- laundry */
+
+  const addLaundryOrder = useCallback((form) => {
+    const items = (form.lines || [])
+      .map((l) => ({ name: l.item, service: l.service, qty: Number(l.q) || 0, price: dec(l.p) }))
+      .filter((l) => l.qty > 0);
+    if (!items.length) { toast('Add at least one piece of clothing'); return false; }
+    const isRoom = form.source === 'ROOM';
+    const room = isRoom ? roomOf(form.room) : null;
+    if (isRoom && !room?.stayId) { toast('That room has no active stay'); return false; }
+    if (!isRoom && !(form.guest || '').trim()) { toast('Enter the guest name'); return false; }
+    const { total } = laundryTotals(form.lines, form.express);
+    if (!total) { toast('Enter the rate for the clothes'); return false; }
+    return run(async () => {
+      await api.post('/laundry/orders', {
+        source: form.requestId ? 'ROOM_REQUEST' : isRoom ? 'STAFF' : 'WALK_IN', requestId: form.requestId || undefined,
+        stayId: room?.stayId ?? null, roomId: room?.id ?? null,
+        guestName: isRoom ? room.guest : form.guest.trim(), phone: isRoom ? room.phone : form.phone,
+        express: !!form.express, expectedDate: form.expected || undefined,
+        billTo: form.billTo, mode: form.billTo === 'PAY_NOW' ? modeOut(form.mode) : undefined,
+        items, amount: dec(total), note: form.note || undefined, businessDate: businessDate(), time: now()
+      });
+      if (form.requestId) {
+        try { await api.patch(`/service-requests/${form.requestId}`, { status: 'IN_PROGRESS' }); } catch { /* the server may do this itself */ }
+      }
+    }, 'Laundry order created');
+  }, [run, toast]);
+
+  /** Requested -> Picked up -> In process -> Ready -> Delivered, or Cancelled. Delivery posts the charge. */
+  const updateLaundryStatus = useCallback(async (id, status) => {
+    const o = dbRef.current.laundry.find((x) => x.id === id);
+    if (status === 'Delivered' && o?.billTo === 'PAY_NOW' && dayBlocked()) return false;
+    const ok = await run(() => api.patch(`/laundry/orders/${id}`, {
+      status: String(status).toUpperCase().replace(/ /g, '_'),
+      ...(status === 'Delivered' ? { businessDate: businessDate(), time: now() } : {})
+    }), status === 'Cancelled' ? 'Laundry order cancelled' : `Order marked ${status.toLowerCase()}`, { close: false });
+    const reqStatus = status === 'Delivered' ? 'DONE' : status === 'Picked up' ? 'IN_PROGRESS' : null;
+    if (ok && o?.requestId && reqStatus) {
+      try { await api.patch(`/service-requests/${o.requestId}`, { status: reqStatus }); await loadRequests(); } catch { /* server may sync it */ }
+    }
+    return ok;
+  }, [run, loadRequests]);
 
   const addOnlineOrder = useCallback((form) => {
     const amount = Number(form.amount) || 0;
@@ -547,9 +645,14 @@ export function HotelProvider({ children }) {
     return run(() => api.post('/online-orders', {
       businessDate: businessDate(), platform: form.plat, orderId: form.oid || `ORD-${Date.now().toString().slice(-6)}`,
       items: [{ name: form.items || 'Order', qty: 1, price: dec(amount) }],
-      amount: dec(amount), commissionPct: dec(form.commission)
+      amount: dec(amount)
     }), 'Order added');
   }, [run, toast]);
+
+  /** Moves an online order along: PREPARING -> PICKED_UP -> DELIVERED, or CANCELLED. */
+  const updateOnlineStatus = useCallback((id, status) =>
+    run(() => api.patch(`/online-orders/${id}`, { status: String(status).toUpperCase().replace(/ /g, '_') }),
+      status === 'Cancelled' ? 'Order cancelled' : `Order marked ${status.toLowerCase()}`, { close: false }), [run]);
 
   /* ---------------------------------------------------------- back office */
 
@@ -558,14 +661,35 @@ export function HotelProvider({ children }) {
     if (!guest) { toast('Guest name is needed'); return false; }
     const type = dbRef.current.roomTypes.find((t) => t.name === form.type);
     if (!type) { toast('Pick a room type'); return false; }
+    const room = roomOf(form.roomNo);
+    if (!room) { toast('Select a room for this booking'); return false; }
     return run(() => api.post('/bookings', {
       source: form.src, ref: form.ref || `REF${Date.now().toString().slice(-7)}`,
-      guestName: guest, phone: form.phone, roomTypeId: type.id,
-      rooms: Number(form.rooms) || 1, pax: Number(form.pax) || 2,
-      arrivalDate: form.inD, departureDate: addDays(form.inD, 1),
+      guestName: guest, phone: form.phone, roomTypeId: type.id, roomId: room.id,
+      rooms: 1, pax: Number(form.pax) || 2,
+      arrivalDate: form.inD, departureDate: addDays(form.inD, Number(form.nights) || 1),
       amount: dec(form.amount), payment: form.pay, note: ''
     }), 'Booking added');
   }, [run, toast]);
+
+  const updateBooking = useCallback((id, form) => {
+    const guest = (form.guest || '').trim();
+    if (!guest) { toast('Guest name is needed'); return false; }
+    const type = dbRef.current.roomTypes.find((t) => t.name === form.type);
+    const room = roomOf(form.roomNo);
+    if (!room && form.status !== 'Cancelled') { toast('Select a room for this booking'); return false; }
+    return run(() => api.patch(`/bookings/${id}`, {
+      source: form.src, ref: form.ref, guestName: guest, phone: form.phone,
+      ...(type ? { roomTypeId: type.id } : {}), roomId: room?.id ?? null,
+      rooms: 1, pax: Number(form.pax) || 2,
+      arrivalDate: form.inD,
+      departureDate: addDays(form.inD, Number(form.nights) || 1),
+      amount: dec(form.amount), payment: form.pay,
+      status: String(form.status || '').toUpperCase().replace(/ /g, '_')
+    }), 'Booking updated');
+  }, [run, toast]);
+
+  const deleteBooking = useCallback((id) => run(() => api.del(`/bookings/${id}`), 'Booking deleted'), [run]);
 
   const adjustStock = useCallback(async (index, delta) => {
     const s = dbRef.current.stock[index];
@@ -579,16 +703,34 @@ export function HotelProvider({ children }) {
     }
   }, [reload, toast]);
 
-  const setAttendance = useCallback(async (staffId, mark) => {
+  /** Attendance rows for a date range (and optionally one person): [{ staffId, date, mark }]. */
+  const fetchAttendance = useCallback(async (from, to, staffId) => {
+    const res = await api.get('/attendance', { from, to, staffId });
+    return list(res)
+      .map((r) => ({
+        staffId: String(r.staffId ?? r.staff?.id), date: String(r.businessDate ?? r.date ?? '').slice(0, 10), mark: normMark(r.mark ?? r.status)
+      }))
+      .filter((r) => r.mark && r.date);
+  }, []);
+
+  /** Marks one person for one date (default: the open day). Managers are limited to the open day. */
+  const setAttendance = useCallback(async (staffId, mark, date) => {
+    const day = businessDate();
+    const when = date || day;
+    if (!isAdmin && when !== day) { toast('Managers can only mark the current open day'); return false; }
+    if (when > day) { toast('You cannot mark attendance for a future date'); return false; }
     const prev = att[staffId];
-    setAtt((a) => ({ ...a, [staffId]: mark }));
+    if (when === day) setAtt((a) => ({ ...a, [staffId]: mark }));
     try {
-      await api.put('/attendance', { staffId, businessDate: businessDate(), mark });
+      await api.put('/attendance', { staffId, businessDate: when, mark });
+      setAttVersion((v) => v + 1);
+      return true;
     } catch (e) {
-      setAtt((a) => ({ ...a, [staffId]: prev }));
+      if (when === day) setAtt((a) => ({ ...a, [staffId]: prev }));
       toast(e.message);
+      return false;
     }
-  }, [att, toast]);
+  }, [att, toast, isAdmin]);
 
   const updateRequest = useCallback(async (id, { status, remark, price }) => {
     try {
@@ -614,15 +756,36 @@ export function HotelProvider({ children }) {
     if (!amount) { toast('Enter the amount'); return false; }
     const onCredit = form.payment === 'CREDIT';
     if (onCredit && !(form.vendor || '').trim()) { toast('Enter the vendor / party you owe this to'); return false; }
+    if (form.head === 'Salary advance' && !form.staffId) { toast('Select the staff member'); return false; }
+    const staffId = form.head === 'Salary advance' ? form.staffId : undefined;
     return run(() => api.post('/expenses', onCredit ? {
       // Udhari: we owe the vendor. Nothing leaves the cash book until it is paid.
       businessDate: businessDate(), time: now(), head: form.head, vendor: form.vendor.trim(),
       amount: dec(amount), narration: form.narration, onCredit: true, dueDate: form.dueDate || undefined
     } : {
-      businessDate: businessDate(), time: now(), head: form.head, vendor: form.vendor,
+      businessDate: businessDate(), time: now(), head: form.head, vendor: form.vendor, staffId,
       mode: modeOut(form.mode), amount: dec(amount), narration: form.narration
     }), onCredit ? 'Expense saved on credit (udhari)' : 'Expense recorded');
   }, [run, toast]);
+
+  /** Admin only. The server re-posts the day book line and refuses edits on a closed day. */
+  const updateExpense = useCallback((id, form) => {
+    if (!isAdmin) { toast('Only an admin can edit an expense'); return false; }
+    const amount = Number(form.amount) || 0;
+    if (!amount) { toast('Enter the amount'); return false; }
+    if (form.head === 'Salary advance' && !form.staffId) { toast('Select the staff member'); return false; }
+    const credit = form.payment === 'CREDIT';
+    return run(() => api.patch(`/expenses/${id}`, {
+      head: form.head, vendor: (form.vendor || '').trim(), amount: dec(amount), narration: form.narration,
+      staffId: form.head === 'Salary advance' ? form.staffId : null,
+      ...(credit ? { dueDate: form.dueDate || null } : { mode: modeOut(form.mode) })
+    }), 'Expense updated', { close: false });
+  }, [run, toast, isAdmin]);
+
+  const deleteExpense = useCallback((id) => {
+    if (!isAdmin) { toast('Only an admin can delete an expense'); return false; }
+    return run(() => api.del(`/expenses/${id}`), 'Expense deleted', { close: false });
+  }, [run, toast, isAdmin]);
 
   /** Pays all or part of an expense that was taken on credit; this is when cash goes out. */
   const payExpenseDue = useCallback((id, form) => {
@@ -656,11 +819,12 @@ export function HotelProvider({ children }) {
     if (!name) { toast('Enter the item name'); return false; }
     if (!price) { toast('Enter the price'); return false; }
     return run(async () => {
-      const res = await api.post('/menu', {
+      const photoUrl = form.image ? await uploadImage(form.image) : undefined;
+      await api.post('/menu', {
         name, description: form.description || '', price: dec(price),
-        category: (form.category || '').trim() || 'Main', isVeg: form.veg !== 'non', available: true
+        category: (form.category || '').trim() || 'Main', isVeg: form.veg !== 'non', available: true,
+        photoUrl
       });
-      await uploadAll(`/menu/${one(res, 'item')?.id ?? one(res, 'menuItem')?.id ?? res?.id}/photo`, form.image ? [form.image] : []);
     }, `${name} added to the menu`);
   }, [run, toast]);
 
@@ -672,6 +836,32 @@ export function HotelProvider({ children }) {
       qty: dec(form.qty || 0), minQty: dec(form.min || 0), rate: dec(form.rate || 0)
     }), `${item} added to inventory`);
   }, [run, toast]);
+
+  const updateStock = useCallback((id, form) => {
+    const item = (form.item || '').trim();
+    if (!item) { toast('Enter the item name'); return false; }
+    return run(() => api.patch(`/stock/${id}`, {
+      item, category: form.cat || 'General', unit: form.unit || 'pcs',
+      qty: dec(form.qty || 0), minQty: dec(form.min || 0), rate: dec(form.rate || 0)
+    }), `${item} updated`);
+  }, [run, toast]);
+
+  const deleteStock = useCallback((id) =>
+    run(() => api.del(`/stock/${id}`), 'Inventory item deleted', { close: false }), [run]);
+
+  const updateStaff = useCallback((id, form) => {
+    const name = (form.name || '').trim();
+    if (!name) { toast('Enter the staff name'); return false; }
+    return run(() => api.patch(`/staff/${id}`, {
+      name, role: form.role || 'Staff', shift: form.shift || 'Morning',
+      phone: form.phone || null, salary: dec(form.salary || 0)
+    }), `${name} updated`);
+  }, [run, toast]);
+
+  const deleteStaff = useCallback((id) => {
+    if (!isAdmin) { toast('Only an admin can delete a staff member'); return false; }
+    return run(() => api.del(`/staff/${id}`), 'Staff member deleted', { close: false });
+  }, [run, toast, isAdmin]);
 
   const addStaff = useCallback((form) => {
     const name = (form.name || '').trim();
@@ -688,30 +878,30 @@ export function HotelProvider({ children }) {
       lines: [{ description: inv.desc, kind: 'ROOM', qty: Number(inv.qty) || 1, rate: dec(inv.rate) }]
     }), 'Invoice saved'), [run]);
 
-  const fullDb = useMemo(() => ({ ...db, kots, att }), [db, kots, att]);
+  const fullDb = useMemo(() => ({ ...db, att }), [db, att]);
 
   const value = useMemo(() => ({
     db: fullDb, tab, setTab, sheet, openSheet, closeSheet, toastMsg, toast,
-    authed, loading, signIn, signOut, reload,
+    authed, loading, signIn, signOut, reload, isAdmin, attVersion,
     actions: {
       setDate, viewDate, setOpening, startDay,
-      addRoom, updateRoom, setRoomStatus, markAllClean,
+      addRoom, updateRoom, deleteRoom, setRoomStatus, markAllClean,
       checkIn, checkOut, shiftRoom, addGuest,
       lookupCustomer, loadCustomer, uploadCustomerDoc,
       addEntry, updateEntry, deleteEntry, closeDay,
-      settleBill, sendKot, addOnlineOrder,
-      addBooking, adjustStock, setAttendance, addExpense, addExtraNights,
-      payExpenseDue, customerCredit, addMenuItem, addStock, addStaff,
-      updateGuestStay, saveInvoice, updateRequest
+      settleBill, sendKot, updateKotStatus, addLaundryOrder, updateLaundryStatus, addOnlineOrder, updateOnlineStatus,
+      addBooking, updateBooking, deleteBooking, adjustStock, setAttendance, addExpense, addExtraNights,
+      payExpenseDue, updateExpense, deleteExpense, customerCredit, addMenuItem, addStock, updateStock, deleteStock, addStaff, updateStaff, deleteStaff, fetchAttendance,
+      updateGuestStay, deleteStay, saveInvoice, updateRequest
     }
   }), [
-    fullDb, tab, sheet, toastMsg, openSheet, closeSheet, toast, authed, loading, signIn, signOut, reload,
-    setDate, viewDate, setOpening, startDay, addRoom, updateRoom, setRoomStatus, markAllClean, checkIn, checkOut, shiftRoom, addGuest,
+    fullDb, tab, sheet, toastMsg, openSheet, closeSheet, toast, authed, loading, signIn, signOut, reload, isAdmin, attVersion,
+    setDate, viewDate, setOpening, startDay, addRoom, updateRoom, deleteRoom, setRoomStatus, markAllClean, checkIn, checkOut, shiftRoom, addGuest,
     lookupCustomer, loadCustomer, uploadCustomerDoc,
-    addEntry, updateEntry, deleteEntry, closeDay, settleBill, sendKot,
-    addOnlineOrder, addBooking, adjustStock, setAttendance, addExpense, addExtraNights,
-    payExpenseDue, customerCredit, addMenuItem, addStock, addStaff,
-    updateGuestStay, saveInvoice, updateRequest
+    addEntry, updateEntry, deleteEntry, closeDay, settleBill, sendKot, updateKotStatus, addLaundryOrder, updateLaundryStatus,
+    addOnlineOrder, updateOnlineStatus, addBooking, updateBooking, deleteBooking, adjustStock, setAttendance, addExpense, addExtraNights,
+    payExpenseDue, updateExpense, deleteExpense, customerCredit, addMenuItem, addStock, updateStock, deleteStock, addStaff, updateStaff, deleteStaff, fetchAttendance,
+    updateGuestStay, deleteStay, saveInvoice, updateRequest
   ]);
 
   return <HotelContext.Provider value={value}>{children}</HotelContext.Provider>;

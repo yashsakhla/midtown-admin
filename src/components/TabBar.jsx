@@ -8,7 +8,7 @@ const TAB_LABEL = {
 
 /** Bottom tab bar on phones; grouped sidebar (brand, sections, user) on desktop. */
 export default function TabBar({ open = false, onClose = () => {} }) {
-  const { tab, setTab: pick } = useHotel();
+  const { tab, setTab: pick, isAdmin } = useHotel();
   const setTab = (id) => { pick(id); onClose(); };
 
   return (
@@ -52,7 +52,7 @@ export default function TabBar({ open = false, onClose = () => {} }) {
         </div>
       ))}
 
-      <div className="who"><i>MT</i><span>Manager</span></div>
+      <div className="who"><i>MT</i><span>{isAdmin ? 'Owner' : 'Manager'}</span></div>
     </nav>
   );
 }

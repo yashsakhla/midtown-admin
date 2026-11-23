@@ -27,7 +27,7 @@ export const modeIn = (m) => MODE_IN[String(m || '').toUpperCase()] || title(m) 
 export const modeOut = (m) => String(m || 'Cash').toUpperCase().replace(/\s+/g, '_');
 export const dcIn = (d) => (String(d || '').toUpperCase() === 'DEBIT' ? 'debit' : 'credit');
 export const dcOut = (d) => (d === 'debit' ? 'DEBIT' : 'CREDIT');
-export const roomStatusIn = (s) => ({ VACANT: 'vacant', OCCUPIED: 'occupied', DIRTY: 'dirty', OOO: 'ooo', MAINTENANCE: 'maintenance' }[String(s).toUpperCase()] || 'vacant');
+export const roomStatusIn = (s) => ({ VACANT: 'vacant', PREBOOKED: 'prebooked', OCCUPIED: 'occupied', DIRTY: 'dirty', OOO: 'ooo', MAINTENANCE: 'maintenance' }[String(s).toUpperCase()] || 'vacant');
 export const roomStatusOut = (s) => String(s).toUpperCase();
 
 /* ----------------------------------------------------------- room types */
@@ -227,7 +227,7 @@ export const mapCustomer = (c) => {
     visits: n(c.visits ?? c.stayCount), spend: n(c.totalSpent ?? c.totalSpend),
     firstVisit: dateOnly(c.firstVisitAt ?? c.createdAt), lastVisit: dateOnly(c.lastVisitAt ?? c.lastStayDate),
     hasDoc: !!(c.hasDocument ?? documents.length), documents,
-    credit: n(c.creditBalance ?? c.dueBalance ?? c.outstanding),
+    credit: n(c.dueAmount ?? c.totalDue ?? c.creditBalance ?? c.dueBalance ?? c.outstanding),
     ledger: (c.creditEntries ?? c.ledger ?? []).map((l) => ({
       id: l.id, date: dateOnly(l.businessDate ?? l.createdAt), kind: String(l.kind || l.type || 'CHARGE').toUpperCase(),
       amount: n(l.amount), mode: l.mode ? modeIn(l.mode) : '', narration: l.narration ?? ''
@@ -249,19 +249,59 @@ export const mapMenu = (raw) =>
     desc: m.description ?? ''
   }));
 
+/** Kitchen order ticket. The server's "new" states all show as Preparing. */
+const KOT_STATUS = { PENDING: 'Preparing', NEW: 'Preparing', PLACED: 'Preparing', OPEN: 'Preparing', IN_PROGRESS: 'Preparing' };
+export function mapKot(k, roomByStay = {}) {
+  const items = (k.items ?? k.lines ?? []).map((i) => ({
+    n: i.name ?? i.menuItem?.name ?? i.itemName ?? 'Item',
+    q: n(i.qty ?? i.quantity ?? 1),
+    p: n(i.price ?? i.unitPrice ?? i.menuItem?.price)
+  }));
+  const raw = String(k.status || 'PREPARING').toUpperCase();
+  return {
+    id: k.id, no: k.number ?? k.kotNumber ?? '', stayId: k.stayId ?? null,
+    room: String(roomByStay[k.stayId]?.no ?? k.roomNumber ?? ''),
+    table: k.tableLabel ?? '', billTo: k.billTo ?? '', waiter: k.waiterName ?? k.waiter?.name ?? '',
+    items, time: hhmm(k.time ?? k.createdAt),
+    status: KOT_STATUS[raw] || title(raw),
+    amount: n(k.total ?? k.amount) || items.reduce((t, i) => t + i.q * i.p, 0)
+  };
+}
+
+/** Laundry order. The server's "new" states all show as Requested. */
+const LAUNDRY_IN = { NEW: 'Requested', PENDING: 'Requested', WASHING: 'In process' };
+export function mapLaundry(o, roomByStay = {}) {
+  const items = (o.items ?? []).map((i) => ({
+    n: i.name ?? i.item ?? 'Item', service: String(i.service || 'WASH').toUpperCase(),
+    q: n(i.qty ?? i.quantity ?? 1), p: n(i.price ?? i.rate)
+  }));
+  const raw = String(o.status || 'REQUESTED').toUpperCase();
+  const stay = roomByStay[o.stayId];
+  return {
+    id: o.id, no: o.number ?? o.orderNo ?? '', stayId: o.stayId ?? null,
+    room: String(stay?.no ?? o.roomNumber ?? ''), guest: o.guestName ?? stay?.guest ?? '', phone: o.phone ?? stay?.phone ?? '',
+    source: String(o.source || 'STAFF').toUpperCase(), requestId: o.requestId ?? o.serviceRequestId ?? null,
+    express: !!o.express, billTo: String(o.billTo || '').toUpperCase(), expected: dateOnly(o.expectedDate ?? o.expectedDelivery),
+    note: o.note ?? '', items, status: LAUNDRY_IN[raw] || title(raw),
+    amount: n(o.amount ?? o.total) || items.reduce((t, i) => t + i.q * i.p, 0),
+    time: hhmm(o.time ?? o.createdAt), date: dateOnly(o.businessDate ?? o.createdAt)
+  };
+}
+
 export function mapOnline(o) {
   const items = Array.isArray(o.items)
     ? o.items.map((i) => `${i.qty ?? 1}× ${i.name}`).join(', ')
     : String(o.items ?? '');
   return {
     id: o.id, plat: o.platform, oid: o.orderId, items,
-    amount: n(o.amount), payout: n(o.payout), status: title(o.status) || 'Preparing',
+    amount: n(o.amount), status: title(o.status) || 'Preparing',
     time: hhmm(o.time ?? o.createdAt)
   };
 }
 
 export const mapBooking = (b, typeById) => ({
   id: b.id, src: b.source, ref: b.ref, guest: b.guestName, phone: b.phone ?? '',
+  roomId: b.roomId ?? b.room?.id ?? null, roomNo: String(b.roomNumber ?? b.room?.number ?? ''),
   type: typeById[b.roomTypeId]?.name ?? b.roomType?.name ?? '—',
   rooms: n(b.rooms) || 1, pax: n(b.pax) || 1,
   inD: dateOnly(b.arrivalDate), outD: dateOnly(b.departureDate), note: b.note ?? '', amount: n(b.amount),
@@ -277,7 +317,7 @@ export const mapStaff = (s) => ({
 });
 
 export const mapExpense = (x) => ({
-  id: x.id, head: x.head, vendor: x.vendor ?? '', mode: x.mode ? modeIn(x.mode) : '', amount: n(x.amount), narration: x.narration ?? '',
+  id: x.id, head: x.head, vendor: x.vendor ?? '', staffId: x.staffId ?? '', mode: x.mode ? modeIn(x.mode) : '', amount: n(x.amount), narration: x.narration ?? '',
   onCredit: !!(x.onCredit ?? x.isCredit), paid: n(x.paidAmount ?? (x.onCredit ? 0 : x.amount)),
   due: n(x.dueAmount ?? x.balance ?? 0), dueDate: dateOnly(x.dueDate),
   time: hhmm(x.time ?? x.createdAt), date: dateOnly(x.businessDate)
@@ -308,5 +348,5 @@ export const emptyDb = () => ({
   date: today(), day: null, tariff: {}, roomTypes: [], rooms: [], entries: [], register: [], customers: [],
   cash: { opening: 0, closed: false, txns: [], shortage: 0, counted: null },
   bookings: [], online: [], stock: [], staff: [], att: {}, expenses: [], payables: [],
-  kots: [], invoices: [], menu: [], requests: []
+  kots: [], laundry: [], invoices: [], menu: [], requests: []
 });

@@ -5,10 +5,14 @@ import {
 } from './EntrySheets';
 import { EditGuestSheet, GuestsSheet } from './GuestSheets';
 import {
-  AddBookingSheet, BookingsSheet, BookingViewSheet, ExpensesSheet, ExportSheet,
-  AddMenuItemSheet, AddStaffSheet, AddStockSheet, GstInvoiceSheet, InventorySheet, KotSheet, OnlineOrderSheet, StaffSheet
+  AddBookingSheet, BookingsSheet, BookingViewSheet, EditBookingSheet, ExpensesSheet,
+  AddMenuItemSheet, AddStockSheet, EditStockSheet, GstInvoiceSheet, InventorySheet, KotSheet, OnlineOrderSheet
 } from './OpsSheets';
+import { AddStaffSheet, EditStaffSheet, StaffSheet } from './StaffSheets';
 import RequestSheet from './RequestSheet';
+import { BillSheet } from './BillSheet';
+import { LaundryOrderSheet, LaundrySheet } from './LaundrySheets';
+import { ExportSheet } from './ReportSheet';
 import { CheckOutSheet } from './CheckOutSheet';
 import { CustomerSheet, CustomersSheet } from './CustomerSheets';
 import { AddGuestSheet, AddRoomSheet, CheckInSheet, EditRoomSheet, MaintenanceSheet, RoomSheet, ShiftRoomSheet } from './RoomSheets';
@@ -33,12 +37,18 @@ const SHEETS = {
   workingDate: WorkingDateSheet,
   kot: KotSheet,
   onlineOrder: OnlineOrderSheet,
+  bill: BillSheet,
+  laundry: LaundrySheet,
+  laundryOrder: LaundryOrderSheet,
   bookings: BookingsSheet,
   booking: AddBookingSheet,
   bookingView: BookingViewSheet,
+  bookingEdit: EditBookingSheet,
   inventory: InventorySheet,
   addStock: AddStockSheet,
+  editStock: EditStockSheet,
   addStaff: AddStaffSheet,
+  editStaff: EditStaffSheet,
   addMenuItem: AddMenuItemSheet,
   staff: StaffSheet,
   expenses: ExpensesSheet,

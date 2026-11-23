@@ -3,7 +3,7 @@ import Field, { Row2 } from '../components/Field';
 import ListRow from '../components/ListRow';
 import Pill from '../components/Pill';
 import Sheet from '../components/Sheet';
-import { addDays, money } from '../lib/format';
+import { addDays, fmtDate, money } from '../lib/format';
 import { GUEST_OPTIONS } from '../lib/rooms';
 import { occupiedRooms, PAYMENT_MODES } from '../lib/selectors';
 import { useHotel } from '../store/HotelContext';
@@ -11,36 +11,58 @@ import { useHotel } from '../store/HotelContext';
 /* ------------------------------------------------------- in-house guests */
 
 export function GuestsSheet() {
-  const { db, openSheet } = useHotel();
+  const { db, openSheet, actions, isAdmin } = useHotel();
   const guests = occupiedRooms(db);
+  const [q, setQ] = useState('');
+  const term = q.trim().toLowerCase();
+  const shown = term
+    ? guests.filter((r) => [r.no, r.guest, r.phone, r.vehicle].some((v) => String(v || '').toLowerCase().includes(term)))
+    : guests;
+
+  const remove = (r) => {
+    if (window.confirm(`Delete the stay of ${r.guest} in room ${r.no}? Use this only for a check-in made by mistake. This cannot be undone.`)) {
+      actions.deleteStay(r.no);
+    }
+  };
 
   return (
     <Sheet title="Guest management">
-      {guests.length ? guests.map((r) => {
-        const overdue = r.checkOut && r.checkOut < db.date;
-        return (
-          <ListRow key={r.no} onClick={() => openSheet('editGuest', { no: r.no })}>
-            <div style={{ width: 44, textAlign: 'center' }}>
-              <div className="num" style={{ color: 'var(--ink)' }}>{r.no}</div>
-              <div style={{ fontSize: 10, color: 'var(--muted)' }}>{r.type}</div>
-            </div>
-            <div className="t">
-              <b>{r.guest}</b>
-              <span>{r.phone} · {r.vehicle} · {r.checkIn} → {r.checkOut || '—'}</span>
-            </div>
-            <div style={{ textAlign: 'right' }}>
-              <div className="num" style={{ color: r.folio > 0 ? 'var(--red)' : 'var(--green)' }}>
-                {money(r.folio)}
-              </div>
-              {overdue ? <Pill tone="o">Due</Pill> : <Pill tone="g">In house</Pill>}
-            </div>
-          </ListRow>
-        );
-      }) : (
-        <ListRow><span style={{ color: 'var(--muted)' }}>No guests in house.</span></ListRow>
-      )}
+      <Field label="Search" placeholder="Room, guest name, phone or vehicle" value={q} onChange={(e) => setQ(e.target.value)} />
+      <div className="rpt-wrap bk-table">
+        <table className="rpt">
+          <thead>
+            <tr>
+              <th>Room</th><th>Guest</th><th>Stay</th><th className="rt">Folio</th><th>Status</th><th className="rt">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {shown.length ? shown.map((r) => {
+              const overdue = r.checkOut && r.checkOut < db.date;
+              return (
+                <tr key={r.no}>
+                  <td className="room"><b>{r.no}</b><span>{r.type}</span></td>
+                  <td className="guest" onClick={() => openSheet('editGuest', { no: r.no })}>
+                    <b>{r.guest}</b>
+                    <span>{[r.phone, r.vehicle, `${r.guests} guest${r.guests === 1 ? '' : 's'}`].filter(Boolean).join(' · ')}</span>
+                  </td>
+                  <td>{r.checkIn ? fmtDate(r.checkIn) : '—'} → {r.checkOut ? fmtDate(r.checkOut) : '—'}
+                    <span className="sub">{r.nights} night{r.nights === 1 ? '' : 's'}</span></td>
+                  <td className="rt num amt" style={{ color: r.folio > 0 ? 'var(--red)' : 'var(--green)' }}>{money(r.folio)}</td>
+                  <td>{overdue ? <Pill tone="o">Due</Pill> : <Pill tone="g">In house</Pill>}</td>
+                  <td className="rt acts">
+                    <button className="btn sm" onClick={() => openSheet('editGuest', { no: r.no })}>Edit</button>
+                    {isAdmin && <button className="btn sm del" onClick={() => remove(r)}>Delete</button>}
+                  </td>
+                </tr>
+              );
+            }) : (
+              <tr><td colSpan={6} className="empty">{guests.length ? 'No guest matches your search.' : 'No guests in house.'}</td></tr>
+            )}
+          </tbody>
+        </table>
+      </div>
       <p style={{ fontSize: 11.5, color: 'var(--muted)', padding: '10px 2px 0' }}>
-        Tap a guest to edit the stay or post an advance, part payment or refund.
+        Edit a stay or post an advance, part payment or refund. Delete is for admins and removes a stay that was created by mistake.
       </p>
     </Sheet>
   );

@@ -46,6 +46,7 @@ export default function RoomsScreen() {
 
       <div className="legend">
         <span><i style={{ background: 'var(--green)' }} />Vacant {countRooms(db, 'vacant')}</span>
+        <span><i style={{ background: '#3B82F6' }} />Prebooked {countRooms(db, 'prebooked')}</span>
         <span><i style={{ background: 'var(--red)' }} />Occupied {countRooms(db, 'occupied')}</span>
         <span><i style={{ background: 'var(--orange)' }} />To clean {countRooms(db, 'dirty')}</span>
         <span><i style={{ background: '#7A6AB8' }} />Maintenance {countRooms(db, 'maintenance')}</span>

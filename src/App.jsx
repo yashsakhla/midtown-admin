@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { Spinner, TopProgress } from './components/Loader';
 import TabBar from './components/TabBar';
 import Toast from './components/Toast';
 import TopBar from './components/TopBar';
@@ -27,18 +28,19 @@ export default function App() {
   const { tab, sheet, openSheet, closeSheet, authed, loading } = useHotel();
   const [navOpen, setNavOpen] = useState(false);
 
-  if (!authed) return <div className="phone"><LoginScreen /></div>;
+  if (!authed) return <><TopProgress /><div className="phone"><LoginScreen /></div></>;
 
   const Screen = SCREENS[tab];
   const [fabLabel, fabSheet] = FAB[tab] || [];
 
   return (
     <>
+      <TopProgress />
       <div className="phone">
         <TopBar onMenu={() => setNavOpen(true)} />
 
         <main className={`scr scr-${tab}`} key={tab}>
-          {loading ? <div className="loading">Loading…</div> : Screen ? <Screen /> : <PageScreen id={tab} />}
+          {loading ? <Spinner /> : Screen ? <Screen /> : <PageScreen id={tab} />}
         </main>
 
         {fabSheet && <button className="fab" onClick={() => openSheet(fabSheet)}>{fabLabel}</button>}

@@ -67,8 +67,8 @@ export function buildReport(db, key = 'daily') {
     case 'online':
       return {
         title: 'Online food orders',
-        head: ['Platform', 'Order ID', 'Time', 'Items', 'Order value', 'Net payout', 'Status'],
-        rows: db.online.map((o) => [o.plat, o.oid, o.time, o.items, o.amount, o.payout, o.status])
+        head: ['Platform', 'Order ID', 'Time', 'Items', 'Order value', 'Status'],
+        rows: db.online.map((o) => [o.plat, o.oid, o.time, o.items, o.amount, o.status])
       };
 
     case 'daily':

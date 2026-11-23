@@ -46,7 +46,7 @@ export function buildBill(room, db) {
       }))
     ];
 
-  const foodLines = db.kots.filter((k) => k.room === room.no)
+  const foodLines = db.kots.filter((k) => k.status !== 'Cancelled' && (k.stayId ? k.stayId === room.stayId : k.room === room.no))
     .flatMap((k) => k.items.map((i) => ({ d: `${i.n} (${k.time})`, q: i.q, rate: i.p, amount: i.q * i.p })));
 
   const otherLines = db.requests

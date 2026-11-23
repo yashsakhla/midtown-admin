@@ -1,9 +1,10 @@
 import { ROOM_ART } from '../assets';
-import { money } from '../lib/format';
+import { fmtDate, money } from '../lib/format';
 import { CalendarIcon, StatusBadgeIcon } from './Icons';
 
 export const roomLabel = (r) =>
   r.status === 'vacant' ? 'Ready'
+    : r.status === 'prebooked' ? 'Prebooked'
     : r.status === 'occupied' ? (r.guest || 'Occupied')
       : r.status === 'dirty' ? 'Needs cleaning'
         : r.status === 'maintenance' ? 'Maintenance'
@@ -23,6 +24,11 @@ export default function RoomCard({ room, onClick }) {
         <div className="rp">{money(room.rate)}</div>
         {room.checkOut && (
           <div className="rd"><CalendarIcon />Till {room.checkOut}</div>
+        )}
+        {room.prebook && (
+          <div className="rd pb"><CalendarIcon />
+            {room.status === 'prebooked' ? room.prebook.guest : room.prebook.today ? 'Prebooked today' : `Prebooked ${fmtDate(room.prebook.inD)}`}
+          </div>
         )}
         <div className="rs"><i />
           <span>{label}</span>

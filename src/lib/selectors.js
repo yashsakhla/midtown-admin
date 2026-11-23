@@ -17,6 +17,12 @@ export const byMode = (db, mode) =>
     .filter((t) => t.mode === mode)
     .reduce((s, t) => s + (t.dc === 'credit' ? t.amount : -t.amount), 0);
 
+export const isWithdraw = (e) => /^withdraw/i.test(String(e?.type || ''));
+
+/** Money taken out of the account (a payout of type Withdraw), not counting anything on credit. */
+export const totalWithdraw = (db) =>
+  (db.register || []).filter((e) => isWithdraw(e) && e.dc !== 'credit' && !e.udhari).reduce((s, e) => s + e.amount, 0);
+
 export const closingBalance = (db) => db.cash.opening + totalReceipt(db) - totalPayout(db);
 
 export const cashInHand = (db) => db.cash.opening + byMode(db, 'Cash');

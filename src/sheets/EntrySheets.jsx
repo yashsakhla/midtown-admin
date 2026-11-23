@@ -9,7 +9,7 @@ import { useHotel } from '../store/HotelContext';
 
 const ENTRY_TYPES = [
   'Check-in', 'Check-out', 'Advance', 'Part payment',
-  'Refund', 'Other receipt', 'Restaurant', 'Expense'
+  'Refund', 'Other receipt', 'Restaurant', 'Expense', 'Withdraw'
 ];
 
 /* ------------------------------------------------------------- new entry */
@@ -21,6 +21,15 @@ export function EntrySheet() {
     type: 'Advance', mode: 'Cash', dc: 'credit', amount: '', narration: ''
   });
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
+  const withdraw = form.type === 'Withdraw';
+
+  /** A withdrawal is always money going out of the account, never a receipt. */
+  const setType = (e) => {
+    const type = e.target.value;
+    setForm((f) => (type === 'Withdraw'
+      ? { ...f, type, dc: 'debit', mode: 'Bank', room: '', phone: '', vehicle: '' }
+      : { ...f, type, ...(f.type === 'Withdraw' ? { dc: 'credit', mode: 'Cash' } : {}) }));
+  };
 
   /** Pull the guest details across when a room is picked. */
   const pickRoom = (e) => {
@@ -41,23 +50,36 @@ export function EntrySheet() {
       footer={<button className="btn p" onClick={() => actions.addEntry(form)}>Save entry</button>}
     >
       <Row2>
-        <Field as="select" label="Room" value={form.room} onChange={pickRoom}>
-          <option value="">No room / general</option>
-          {db.rooms.map((r) => (
-            <option key={r.no} value={r.no}>{r.no} · {r.guest || r.type}</option>
-          ))}
-        </Field>
-        <Field as="select" label="Entry type" value={form.type} onChange={set('type')}>
-          {ENTRY_TYPES.map((t) => <option key={t}>{t}</option>)}
-        </Field>
+        {withdraw ? (
+          <Field as="select" label="Entry type" value={form.type} onChange={setType}>
+            {ENTRY_TYPES.map((t) => <option key={t}>{t}</option>)}
+          </Field>
+        ) : (
+          <Field as="select" label="Room" value={form.room} onChange={pickRoom}>
+            <option value="">No room / general</option>
+            {db.rooms.map((r) => (
+              <option key={r.no} value={r.no}>{r.no} · {r.guest || r.type}</option>
+            ))}
+          </Field>
+        )}
+        {withdraw
+          ? <Field label="Withdrawn by" placeholder="Name (optional)" value={form.guest} onChange={set('guest')} />
+          : (
+            <Field as="select" label="Entry type" value={form.type} onChange={setType}>
+              {ENTRY_TYPES.map((t) => <option key={t}>{t}</option>)}
+            </Field>
+          )}
       </Row2>
 
-      <Field label="Customer name" value={form.guest} onChange={set('guest')} />
-
-      <Row2>
-        <Field label="Phone" type="tel" value={form.phone} onChange={set('phone')} />
-        <Field label="Vehicle" value={form.vehicle} onChange={set('vehicle')} />
-      </Row2>
+      {!withdraw && (
+        <>
+          <Field label="Customer name" value={form.guest} onChange={set('guest')} />
+          <Row2>
+            <Field label="Phone" type="tel" value={form.phone} onChange={set('phone')} />
+            <Field label="Vehicle" value={form.vehicle} onChange={set('vehicle')} />
+          </Row2>
+        </>
+      )}
 
       <Row2>
         <Field label="Amount" type="number" placeholder="0" value={form.amount} onChange={set('amount')} />
@@ -66,12 +88,17 @@ export function EntrySheet() {
         </Field>
       </Row2>
 
-      <Field as="select" label="Credit / debit" value={form.dc} onChange={set('dc')}>
+      <Field as="select" label="Credit / debit" value={form.dc} onChange={set('dc')} disabled={withdraw}>
         <option value="credit">Credit — received</option>
         <option value="debit">Debit — paid out</option>
       </Field>
 
-      <Field label="Narration" value={form.narration} onChange={set('narration')} />
+      <Field label="Narration" placeholder={withdraw ? 'Withdrawn from account for…' : ''} value={form.narration} onChange={set('narration')} />
+      {withdraw && (
+        <p style={{ fontSize: 12, color: 'var(--muted)', margin: '-4px 0 10px' }}>
+          A withdrawal is money taken out of the account. It is posted as a debit and appears under Outgoing in the day book.
+        </p>
+      )}
 
       <div style={{ background: 'var(--wash)', color: 'var(--blue)', borderRadius: 11, padding: '11px 12px', fontSize: 12.5 }}>
         If the same entry already exists for today, the app opens it for
@@ -166,7 +193,8 @@ export function EditEntrySheet({ id }) {
           <option value="">No room / general</option>
           {db.rooms.map((r) => <option key={r.no} value={r.no}>{r.no}</option>)}
         </Field>
-        <Field as="select" label="Entry type" value={form.type} onChange={set('type')}>
+        <Field as="select" label="Entry type" value={form.type}
+          onChange={(e) => { const type = e.target.value; setForm((f) => ({ ...f, type, ...(type === 'Withdraw' ? { dc: 'debit' } : {}) })); }}>
           {ENTRY_TYPES.map((t) => <option key={t}>{t}</option>)}
         </Field>
       </Row2>

@@ -10,7 +10,8 @@ export const NAV = [
     ['page', 'customers', 'Customers', 'M17 20v-2a4 4 0 00-3-3.9M9 11a4 4 0 100-8 4 4 0 000 8M3 20v-2a4 4 0 014-4h4a4 4 0 014 4v2M17 3.1a4 4 0 010 7.8']
   ]],
   ['Food & service', [
-    ['tab', 'food', 'Restaurant & orders']
+    ['tab', 'food', 'Restaurant & orders'],
+    ['page', 'laundry', 'Laundry', 'M8 3l-5 3 2 4 3-1v11h8V9l3 1 2-4-5-3a4 4 0 01-8 0z']
   ]],
   ['Back office', [
     ['tab', 'more', 'Back office'],
@@ -26,6 +27,7 @@ export const PAGE = {
   home: ['Dashboard', "Here's what's happening at The Midtown today."],
   rooms: ['Room status', 'Tap a room to change its status or open the folio'],
   book: ['Day book & cash', 'Every entry of the day, with opening balance and receipts by mode'],
+  laundry: ['Laundry', 'Room requests, washing status and delivery'],
   food: ['Restaurant & orders', 'Table billing, room orders and kitchen slips'],
   more: ['Back office', 'Bookings, stock, staff, expenses and reports'],
   requests: ['Service requests', 'All guest requests, filter by date'],

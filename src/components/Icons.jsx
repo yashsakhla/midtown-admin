@@ -20,6 +20,7 @@ export function TabIcon({ name }) {
 
 const BADGE_PATHS = {
   vacant: 'M14 7a3 3 0 100 6 3 3 0 000-6zM11.2 11.2L4 18.4V21h2.6l.8-.8v-1.6h1.6l.8-.8v-1.6h1.6l1.6-1.6',
+  prebooked: 'M8 3v3M16 3v3M4 9h16M5 5h14v15H5zM9 14l2 2 4-4',
   occupied: 'M12 12a4 4 0 100-8 4 4 0 000 8zM5 21v-1.5C5 16.5 8 15 12 15s7 1.5 7 4.5V21',
   dirty: 'M14 3l-2 2 5 5 2-2-5-5zM11 6L4 13v5h5l7-7M5 5l1 2 2-1-2-1-1 0z',
   maintenance: 'M14.7 6.3a4 4 0 00-5.4 5.4L3 18l3 3 6.3-6.3a4 4 0 005.4-5.4l-2.4 2.4-2.1-.6-.6-2.1z',

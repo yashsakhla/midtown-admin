@@ -1,14 +1,13 @@
 import Card from '../components/Card';
 import DateBar from '../components/DateBar';
 import { Kpi, KpiGrid } from '../components/Kpi';
-import ListRow from '../components/ListRow';
 import Pill from '../components/Pill';
 import { sourceLabel } from '../api/mappers';
 import { fmtClock, fmtDate, money } from '../lib/format';
 import { printReport } from '../lib/print';
 import { buildReport } from '../lib/reports';
 import {
-  byMode, cashInHand, closingBalance, PAYMENT_MODES, totalPayout, totalReceipt
+  byMode, cashInHand, closingBalance, PAYMENT_MODES, totalPayout, totalReceipt, totalWithdraw, isWithdraw
 } from '../lib/selectors';
 import { useHotel } from '../store/HotelContext';
 
@@ -49,6 +48,62 @@ function DayStatus({ db, openSheet }) {
   );
 }
 
+const sumOf = (rows) => rows.filter((e) => !e.udhari).reduce((t, e) => t + e.amount, 0);
+
+/** One side of the register: incoming (credits) or outgoing (debits), as a table with its own total. */
+function RegTable({ title, tone, rows, openLine, shortage = 0 }) {
+  const total = sumOf(rows) + shortage;
+  return (
+    <div className={`reg-col ${tone}`}>
+      <div className="reg-head">
+        <b>{title}</b>
+        <span>{rows.length} entr{rows.length === 1 ? 'y' : 'ies'}</span>
+      </div>
+      <div className="rpt-wrap bk-table">
+        <table className="rpt">
+          <thead>
+            <tr><th>Time</th><th>Particulars</th><th className="rt">Amount</th></tr>
+          </thead>
+          <tbody>
+            {rows.length ? rows.map((e) => {
+              const auto = e.source && e.source !== 'MANUAL';
+              return (
+                <tr key={e.id} onClick={() => openLine(e)} style={{ cursor: 'pointer' }}>
+                  <td>{e.time || '—'}</td>
+                  <td className="guest">
+                    <b>{e.room ? `${e.room} · ` : ''}{e.guest || e.type}</b>
+                    <span>
+                      {isWithdraw(e) ? <b style={{ color: '#A55A00' }}>Withdraw</b> : e.type} · {e.udhari ? 'Udhari' : e.mode}{e.narration ? ` · ${e.narration}` : ''}
+                      {auto && <> · <em style={{ fontStyle: 'normal', color: 'var(--blue)' }}>{sourceLabel(e.source)}</em></>}
+                    </span>
+                    {e.shortfall > 0 && <span style={{ color: 'var(--red)', fontWeight: 600 }}>Short received {money(e.shortfall)}</span>}
+                  </td>
+                  <td className="rt num amt" style={{ color: e.udhari ? '#A55A00' : tone === 'in' ? 'var(--green)' : 'var(--red)' }}>
+                    {money(e.amount)}
+                    {e.udhari && <span style={{ display: 'block', fontSize: 10.5, color: 'var(--muted)', fontWeight: 500 }}>on credit · not paid</span>}
+                  </td>
+                </tr>
+              );
+            }) : (
+              <tr><td colSpan={3} className="empty">No {title.toLowerCase()} entries on this date.</td></tr>
+            )}
+            {shortage > 0 && (
+              <tr>
+                <td>—</td>
+                <td className="guest"><b style={{ color: 'var(--red)' }}>Cash shortage at close</b><span>Counted less than expected</span></td>
+                <td className="rt num amt" style={{ color: 'var(--red)' }}>{money(shortage)}</td>
+              </tr>
+            )}
+          </tbody>
+          <tfoot>
+            <tr><td colSpan={2}>Total {title.toLowerCase()}</td><td className="rt num">{money(total)}</td></tr>
+          </tfoot>
+        </table>
+      </div>
+    </div>
+  );
+}
+
 export default function DayBookScreen() {
   const { db, openSheet } = useHotel();
 
@@ -56,6 +111,8 @@ export default function DayBookScreen() {
   const openDay = db.day?.status === 'OPEN';
   const viewingOpen = openDay && db.day.businessDate === db.date;
   const short = db.cash.shortage > 0 ? db.cash.shortage : 0;
+  const incoming = db.register.filter((e) => e.dc === 'credit');
+  const outgoing = db.register.filter((e) => e.dc !== 'credit');
   const over = db.cash.shortage < 0 ? -db.cash.shortage : 0;
 
   const printDay = () => {
@@ -85,9 +142,10 @@ export default function DayBookScreen() {
       <KpiGrid>
         <Kpi icon="bank" tone="orange" value={money(db.cash.opening)} label="Opening balance" />
         <Kpi icon="down" tone="blue" value={money(totalReceipt(db))} label="Total receipt" note="all modes" />
-        <Kpi icon="up" tone="red" value={money(totalPayout(db))} label="Total payout" note="incl. expenses" />
+        <Kpi icon="up" tone="red" value={money(totalPayout(db))} label="Total payout" note="incl. expenses & withdraw" />
         <Kpi icon="wallet" tone="gold" value={money(cashInHand(db))} label="Cash in hand" note="expected in drawer" />
         <Kpi icon="check" tone="green" value={money(closingBalance(db))} label="Closing balance" />
+        <Kpi icon="up" tone="gold" value={money(totalWithdraw(db))} label="Withdraw" note="taken from account" />
       </KpiGrid>
 
       {(short > 0 || over > 0) && (
@@ -103,43 +161,10 @@ export default function DayBookScreen() {
           title={`Day register · ${fmtDate(db.date)}`}
           action={<button className="btn sm" onClick={printDay}>Print</button>}
         >
-          {db.register.length ? db.register.map((e) => {
-            const auto = e.source && e.source !== 'MANUAL';
-            return (
-              <ListRow key={e.id} onClick={() => openLine(e)} className={e.shortfall > 0 ? 'red' : ''}>
-                <div style={{ width: 44, textAlign: 'center' }}>
-                  <div className="num" style={{ color: 'var(--ink)' }}>{e.room || '—'}</div>
-                  <div style={{ fontSize: 10, color: 'var(--muted)' }}>{e.time}</div>
-                </div>
-                <div className="t">
-                  <b>{e.guest || e.type}</b>
-                  <span>
-                    {e.type} · {e.udhari ? 'Udhari' : e.mode}{e.narration ? ` · ${e.narration}` : ''}
-                    {auto && <> · <em style={{ fontStyle: 'normal', color: 'var(--blue)' }}>{sourceLabel(e.source)}</em></>}
-                  </span>
-                  {e.shortfall > 0 && <span style={{ color: 'var(--red)', fontWeight: 600 }}>Short received {money(e.shortfall)}</span>}
-                </div>
-                {e.udhari ? (
-                  <div style={{ textAlign: 'right' }}>
-                    <div className="num" style={{ color: '#A55A00' }}>{money(e.amount)}</div>
-                    <div style={{ fontSize: 10.5, color: 'var(--muted)' }}>on credit · not paid</div>
-                  </div>
-                ) : (
-                  <div className="num" style={{ color: e.dc === 'credit' ? 'var(--green)' : 'var(--red)' }}>
-                    {e.dc === 'debit' ? '−' : ''}{money(e.amount)}
-                  </div>
-                )}
-              </ListRow>
-            );
-          }) : (
-            <ListRow><span style={{ color: 'var(--muted)' }}>No entries on this date.</span></ListRow>
-          )}
-          {short > 0 && (
-            <ListRow className="red">
-              <div className="t"><b style={{ color: 'var(--red)' }}>Cash shortage at close</b><span>Counted less than expected</span></div>
-              <div className="num" style={{ color: 'var(--red)' }}>{money(short)}</div>
-            </ListRow>
-          )}
+          <div className="reg-split">
+            <RegTable title="Incoming" tone="in" rows={incoming} openLine={openLine} />
+            <RegTable title="Outgoing" tone="out" rows={outgoing} openLine={openLine} shortage={short} />
+          </div>
         </Card>
 
         <div className="bk-side">

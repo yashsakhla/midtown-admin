@@ -12,7 +12,7 @@ const SUBTITLES = {
 const subtitle = (tab) => SUBTITLES[tab] || PAGE[tab][0];
 
 export default function TopBar({ onMenu = () => {} }) {
-  const { tab, openSheet, signOut, db } = useHotel();
+  const { tab, openSheet, signOut, db, isAdmin } = useHotel();
   const h = new Date().getHours();
   const greet = h < 12 ? 'Good morning' : h < 17 ? 'Good afternoon' : 'Good evening';
   const [title, sub] = PAGE[tab];
@@ -29,7 +29,7 @@ export default function TopBar({ onMenu = () => {} }) {
         <p>{subtitle(tab)}</p>
       </div>
       <div className="hd-d">
-        <h2>{tab === 'home' ? `${greet}, Manager 👋` : title}</h2>
+        <h2>{tab === 'home' ? `${greet}, ${isAdmin ? 'Owner' : 'Manager'} 👋` : title}</h2>
         <div className="sub">{sub}</div>
       </div>
       <span className="today-chip">

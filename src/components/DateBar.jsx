@@ -1,12 +1,21 @@
-import { addDays } from '../lib/format';
+import { addDays, fmtDate } from '../lib/format';
 import { useHotel } from '../store/HotelContext';
 
 /** Previous / pick / next date, plus a way back to the open day. Everything below follows the date. */
 export default function DateBar({ label = 'Date' }) {
-  const { db, actions } = useHotel();
+  const { db, actions, isAdmin } = useHotel();
   const { viewDate } = actions;
   const open = db.day?.status === 'OPEN' ? db.day.businessDate : '';
   const isCurrent = !!open && db.date === open;
+
+  // Managers can only see the open business day: no way to move to a past date.
+  if (!isAdmin) {
+    return (
+      <div className="datebar">
+        <b aria-label={label}>{fmtDate(db.date)}</b>
+      </div>
+    );
+  }
 
   return (
     <div className="datebar">

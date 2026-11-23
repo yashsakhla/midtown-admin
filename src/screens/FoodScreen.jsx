@@ -52,8 +52,22 @@ export default function FoodScreen() {
     setTable('');
   };
 
-  const onlineSale = db.online.reduce((s, o) => s + o.amount, 0);
-  const running = db.online.filter((o) => o.status !== 'Delivered').length;
+  const live = db.online.filter((o) => o.status !== 'Cancelled');
+  const onlineSale = live.reduce((s, o) => s + o.amount, 0);
+  const running = live.filter((o) => o.status !== 'Delivered').length;
+  const tone = { Delivered: 'g', Preparing: 'o', Cancelled: 'r' };
+
+  const changeKotStatus = (k, status) => {
+    if (status === k.status) return;
+    if (status === 'Cancelled' && !window.confirm('Cancel this kitchen order?')) return;
+    actions.updateKotStatus(k.id, status);
+  };
+
+  const changeStatus = (o, status) => {
+    if (status === o.status) return;
+    if (status === 'Cancelled' && !window.confirm(`Cancel ${o.plat} order ${o.oid}? It will no longer count as sales.`)) return;
+    actions.updateOnlineStatus(o.id, status);
+  };
 
   return (
     <>
@@ -63,33 +77,68 @@ export default function FoodScreen() {
       </KpiGrid>
 
       <Card title="Online orders">
-        {db.online.map((o) => (
-          <ListRow key={o.id} title={`${o.plat} · ${o.oid}`} sub={o.items}
-            right={
-              <div style={{ textAlign: 'right' }}>
-                <div className="num" style={{ color: 'var(--ink)' }}>{money(o.amount)}</div>
-                <Pill tone={o.status === 'Delivered' ? 'g' : o.status === 'Preparing' ? 'o' : 'b'}>
-                  {o.status}
-                </Pill>
-              </div>
-            }
-          />
-        ))}
+        {db.online.map((o) => {
+          const closed = o.status === 'Delivered' || o.status === 'Cancelled';
+          const cancelled = o.status === 'Cancelled';
+          return (
+            <ListRow key={o.id} title={`${o.plat} · ${o.oid}`}
+              sub={o.items}
+              right={
+                <div style={{ textAlign: 'right' }}>
+                  <div className="num" style={{ color: cancelled ? 'var(--muted)' : 'var(--ink)', textDecoration: cancelled ? 'line-through' : 'none' }}>{money(o.amount)}</div>
+                  {closed ? (
+                    <Pill tone={tone[o.status] || 'b'}>{o.status}</Pill>
+                  ) : (
+                    <select className="stsel" aria-label={`Status of order ${o.oid}`} value={o.status}
+                      onChange={(e) => changeStatus(o, e.target.value)}>
+                      {['Preparing', 'Picked up', 'Delivered', 'Cancelled'].map((x) => <option key={x}>{x}</option>)}
+                    </select>
+                  )}
+                  {!cancelled && (
+                    <div style={{ marginTop: 6 }}>
+                      <button className="btn sm" onClick={() => openSheet('bill', { kind: 'online', id: o.id })}>Print bill</button>
+                    </div>
+                  )}
+                </div>
+              }
+            />
+          );
+        })}
         <ListRow>
           <button className="btn sm" onClick={() => openSheet('onlineOrder')}>Add online order</button>
         </ListRow>
       </Card>
 
-      <Card title="Kitchen queue">
-        {db.kots.length ? db.kots.map((k) => (
-          <ListRow
-            key={k.id}
-            title={`Room ${k.room}`}
-            sub={k.items.map((i) => `${i.q}× ${i.n}`).join(', ')}
-            right={<Pill tone={k.status === 'Served' ? 'g' : 'o'}>{k.status}</Pill>}
-          />
-        )) : (
-          <ListRow><span style={{ color: 'var(--muted)' }}>Kitchen queue is clear.</span></ListRow>
+      <Card title="Kitchen orders (KOT)">
+        {db.kots.length ? db.kots.map((k) => {
+          const done = k.status === 'Served' || k.status === 'Cancelled';
+          return (
+            <ListRow
+              key={k.id}
+              title={`${k.room ? `Room ${k.room}` : k.table || 'Walk-in'}${k.no ? ` · KOT ${k.no}` : ''}`}
+              sub={`${k.items.map((i) => `${i.q}× ${i.n}`).join(', ')}${k.time ? ` · ${k.time}` : ''}${k.waiter ? ` · ${k.waiter}` : ''}`}
+              right={
+                <div style={{ textAlign: 'right' }}>
+                  <div className="num" style={{ color: k.status === 'Cancelled' ? 'var(--muted)' : 'var(--ink)', textDecoration: k.status === 'Cancelled' ? 'line-through' : 'none' }}>{money(k.amount)}</div>
+                  {done ? (
+                    <Pill tone={k.status === 'Served' ? 'g' : 'r'}>{k.status}</Pill>
+                  ) : (
+                    <select className="stsel" aria-label={`Status of KOT ${k.no || k.id}`} value={k.status}
+                      onChange={(e) => changeKotStatus(k, e.target.value)}>
+                      {['Preparing', 'Ready', 'Served', 'Cancelled'].map((x) => <option key={x}>{x}</option>)}
+                    </select>
+                  )}
+                  {k.status !== 'Cancelled' && (
+                    <div style={{ marginTop: 6 }}>
+                      <button className="btn sm" onClick={() => openSheet('bill', { kind: 'kot', id: k.id })}>Print bill</button>
+                    </div>
+                  )}
+                </div>
+              }
+            />
+          );
+        }) : (
+          <ListRow><span style={{ color: 'var(--muted)' }}>No kitchen orders yet.</span></ListRow>
         )}
       </Card>
 

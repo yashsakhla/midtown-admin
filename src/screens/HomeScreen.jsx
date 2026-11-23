@@ -1,3 +1,4 @@
+import { bookingState, bookingToday } from '../lib/bookings';
 import { HERO } from '../assets';
 import Card from '../components/Card';
 import { Kpi, KpiGrid } from '../components/Kpi';
@@ -20,10 +21,12 @@ export default function HomeScreen() {
   const pendingReq = shown.filter(isPendingRequest).length;
   const doneReq = shown.filter((r) => r.status === 'DONE').length;
 
-  const arrivals = db.bookings.filter((b) => b.status === 'Arriving').length;
-  const upcoming = db.bookings.filter((b) => b.status !== 'Cancelled');
+  const todayStr = bookingToday(db);
+  const live = db.bookings.filter((b) => ['Arriving', 'Confirmed'].includes(bookingState(b, todayStr)));
+  const arrivals = live.filter((b) => b.status === 'Arriving').length;
+  const upcoming = live;
   const low = lowStock(db);
-  const foodOrders = (db.kots?.length || 0) + (db.online?.length || 0);
+  const foodOrders = (db.kots?.filter((k) => k.status !== 'Cancelled').length || 0) + (db.online?.filter((o) => o.status !== 'Cancelled').length || 0);
 
   return (
     <>

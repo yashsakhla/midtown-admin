@@ -6,12 +6,13 @@ import { roomImg } from '../assets';
 import Field, { Row2 } from '../components/Field';
 import Pill from '../components/Pill';
 import Sheet from '../components/Sheet';
-import { addDays, money } from '../lib/format';
+import { addDays, fmtDate, money } from '../lib/format';
 import { GUEST_OPTIONS, ROOM_CATEGORIES, ROOM_FEATURES, EXTRA_GUEST_CHARGE, extraChargeOf, extraGuests, nightsLeft, rateFor, shiftPreview } from '../lib/rooms';
 import { useHotel } from '../store/HotelContext';
 
 const STATUS_TEXT = {
   vacant: ['Vacant & clean', 'g'],
+  prebooked: ['Prebooked', 'b'],
   occupied: ['Occupied', 'r'],
   dirty: ['Needs cleaning', 'o'],
   ooo: ['Out of order', 'n'],
@@ -21,9 +22,13 @@ const STATUS_TEXT = {
 /* ------------------------------------------------------------ room detail */
 
 export function RoomSheet({ no }) {
-  const { db, openSheet, closeSheet, setTab, actions } = useHotel();
+  const { db, openSheet, closeSheet, setTab, actions, isAdmin } = useHotel();
   const room = db.rooms.find((r) => r.no === no);
   if (!room) return null;
+
+  const confirmDelete = () => {
+    if (window.confirm(`Delete room ${no} permanently? This cannot be undone.`)) actions.deleteRoom(no);
+  };
 
   const [text, tone] = STATUS_TEXT[room.status];
 
@@ -37,6 +42,15 @@ export function RoomSheet({ no }) {
         <button className="btn" onClick={() => openSheet('maintenance', { no })}>Mark under maintenance</button>
         <div style={{ height: 8 }} />
         <button className="btn" onClick={() => actions.setRoomStatus(no, 'ooo')}>Mark out of order</button>
+      </>
+    ),
+    prebooked: (
+      <>
+        <button className="btn p" onClick={() => { closeSheet(); openSheet('checkIn', { room: no }); }}>
+          Check in the prebooked guest
+        </button>
+        <div style={{ height: 8 }} />
+        <button className="btn" onClick={() => openSheet('maintenance', { no })}>Mark under maintenance</button>
       </>
     ),
     occupied: (
@@ -77,13 +91,34 @@ export function RoomSheet({ no }) {
       footer={
         <>
           {actionsByStatus[room.status]}
-          <div style={{ height: 8 }} />
-          <button className="btn" onClick={() => openSheet('editRoom', { no })}>Edit room — price &amp; features</button>
+          {isAdmin && (
+            <>
+              <div style={{ height: 8 }} />
+              <button className="btn" onClick={() => openSheet('editRoom', { no })}>Edit room — price &amp; features</button>
+              <div style={{ height: 8 }} />
+              <button className="btn" style={{ color: 'var(--red)' }} disabled={room.status === 'occupied'} onClick={confirmDelete}>
+                Delete room{room.status === 'occupied' ? ' (occupied)' : ''}
+              </button>
+            </>
+          )}
         </>
       }
     >
       <RoomGallery room={room} />
       <Pill tone={tone}>{text}</Pill>
+      {room.prebook && (
+        <div className="pb-box">
+          <div>
+            <b>{room.prebook.today ? 'Prebooked for today' : `Prebooked for ${fmtDate(room.prebook.inD)}`}</b>
+            {' — '}{room.prebook.guest}, {room.prebook.pax} guest{room.prebook.pax === 1 ? '' : 's'}
+            {room.prebook.outD ? ` · till ${fmtDate(room.prebook.outD)}` : ''}
+            {room.status === 'occupied' && room.prebook.today ? '. This room is still occupied, so you may want to move the booking to another free room.' : ''}
+          </div>
+          <button className="btn sm" style={{ marginTop: 8 }} onClick={() => openSheet('bookingEdit', { id: room.prebook.id })}>
+            Change room for this prebooking
+          </button>
+        </div>
+      )}
       {room.status === 'maintenance' && (
         <p style={{ fontSize: 12.5, color: 'var(--muted)', margin: '8px 0 0' }}>
           Not available for booking{room.maintenance.reason ? ` — ${room.maintenance.reason}` : ''}
@@ -196,13 +231,16 @@ export function AddRoomSheet({ floor }) {
 
 export function CheckInSheet({ room: preselected }) {
   const { db, actions } = useHotel();
-  const free = db.rooms.filter((r) => r.status === 'vacant');
+  const free = db.rooms.filter((r) => r.status === 'vacant' || r.status === 'prebooked');
+  const pb = db.rooms.find((r) => r.no === preselected)?.prebook;
+  const pbToday = pb?.today ? pb : null;
   const floors = [...new Set(free.map((r) => r.floor))].sort((a, b) => a - b);
 
   const [floorPick, setFloorPick] = useState('all');
   const [form, setForm] = useState({
     room: preselected || free[0]?.no || '',
-    guest: '', phone: '', vehicle: '', guests: '1', doc: emptyDoc(), extraRooms: [],
+    guest: pbToday?.guest || '', phone: pbToday?.phone || '', vehicle: '', guests: String(Math.min(4, pbToday?.pax || 1)),
+    bookingId: pbToday?.id ?? null, doc: emptyDoc(), extraRooms: [],
     date: db.date, nights: '1', checkOut: addDays(db.date, 1),
     amount: '', mode: 'Cash', dc: 'credit', narration: ''
   });
@@ -275,7 +313,7 @@ export function CheckInSheet({ room: preselected }) {
 
         <Field as="select" label="Room number" value={form.room} onChange={set('room')}>
           {roomOptions.length ? roomOptions.map((r) => (
-            <option key={r.no} value={r.no}>{r.no} — {r.type} ({money(r.singleRate)} / {money(r.doubleRate)})</option>
+            <option key={r.no} value={r.no}>{r.no} — {r.type} ({money(r.singleRate)} / {money(r.doubleRate)}){r.status === 'prebooked' ? ' · prebooked' : ''}</option>
           )) : <option value="">No vacant room on this floor</option>}
         </Field>
       </Row2>
@@ -543,7 +581,7 @@ function FeaturePicker({ value, onChange }) {
 /* ------------------------------------------------------------- edit a room */
 
 export function EditRoomSheet({ no }) {
-  const { db, actions } = useHotel();
+  const { db, actions, isAdmin } = useHotel();
   const room = db.rooms.find((r) => r.no === no);
   const [form, setForm] = useState(() => ({
     floor: String(room?.floor ?? 1), category: room?.category || 'AC', type: room?.type || ROOM_CATEGORIES.AC[0],
@@ -553,7 +591,7 @@ export function EditRoomSheet({ no }) {
     sizeSqft: room?.sizeSqft == null ? '' : String(room.sizeSqft), sleeps: room?.sleeps == null ? '' : String(room.sleeps),
     features: room?.features || [], description: room?.description || '', images: [], removeImages: []
   }));
-  if (!room) return null;
+  if (!room || !isAdmin) return null;
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
   const setCategory = (e) => {
     const category = e.target.value;

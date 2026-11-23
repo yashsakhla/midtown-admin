@@ -69,7 +69,19 @@ async function refresh() {
   return refreshing;
 }
 
+/* Global in-flight request counter so the UI can show a loader for any API call. */
+let pending = 0;
+const listeners = new Set();
+const emit = () => listeners.forEach((fn) => fn(pending));
+export const subscribePending = (fn) => { listeners.add(fn); fn(pending); return () => listeners.delete(fn); };
+
 async function request(method, path, opts = {}) {
+  pending += 1; emit();
+  try { return await doRequest(method, path, opts); }
+  finally { pending -= 1; emit(); }
+}
+
+async function doRequest(method, path, opts = {}) {
   let { res, data } = await raw(method, path, opts);
   if (res.status === 401 && opts.auth !== false && await refresh()) {
     ({ res, data } = await raw(method, path, opts));
@@ -92,9 +104,56 @@ export const api = {
   del: (path) => request('DELETE', path)
 };
 
+const MEDIA_BASE = (import.meta.env.VITE_MEDIA_URL || 'https://midtown-media.sgp1.cdn.digitaloceanspaces.com/images').replace(/\/$/, '');
+
+const newFileId = (file) => {
+  const ext = (file.name?.match(/\.([a-z0-9]{1,5})$/i)?.[1] || (file.type || '').split('/')[1] || 'bin').toLowerCase();
+  const id = crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  return `${id}.${ext}`;
+};
+
+/**
+ * Uploads one file to the media store at <MEDIA_BASE>/<fileId> and returns its public URL.
+ * Uses the URL from the response when it has one, otherwise the upload address itself.
+ * No auth header is sent: this is a third-party host, not our API.
+ */
+export async function uploadImage(file) {
+  const target = `${MEDIA_BASE}/${newFileId(file)}`;
+  pending += 1; emit();
+  try {
+    let res;
+    try {
+      res = await fetch(target, { method: 'PUT', headers: { 'Content-Type': file.type || 'application/octet-stream', 'x-amz-acl': 'public-read' }, body: file });
+    } catch {
+      throw new ApiError('Cannot reach the image server', 0);
+    }
+    const text = await res.text();
+    let data = null;
+    try { data = text ? JSON.parse(text) : null; } catch { data = null; }
+    if (!res.ok) throw new ApiError(messageOf(data, res.status).replace(/^Request failed/, 'Image upload failed'), res.status, data);
+    return data?.url ?? data?.fileUrl ?? data?.data?.url ?? res.headers.get('location') ?? target;
+  } finally { pending -= 1; emit(); }
+}
+
+/** Reads the role from the login response, falling back to the JWT payload. Returns 'ADMIN' | 'MANAGER' | ''. */
+function roleFrom(data) {
+  let role = data?.user?.role ?? data?.staff?.role ?? data?.role;
+  if (!role && data?.accessToken) {
+    try {
+      const b64 = data.accessToken.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');
+      role = JSON.parse(atob(b64)).role;
+    } catch { /* no readable role */ }
+  }
+  return String(role || '').toUpperCase();
+}
+
+/** UI-only convenience: the server must enforce the same rules. Unknown role is treated as MANAGER (restricted). */
+export const getRole = () => session?.role || '';
+export const isAdminSession = () => getRole() === 'ADMIN';
+
 export async function login(identifier, password) {
   const data = await request('POST', '/auth/staff/login', { body: { identifier, password }, auth: false });
-  saveSession({ accessToken: data.accessToken, refreshToken: data.refreshToken });
+  saveSession({ accessToken: data.accessToken, refreshToken: data.refreshToken, role: roleFrom(data) });
   return data;
 }
 
