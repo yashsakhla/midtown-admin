@@ -18,7 +18,11 @@ export function CheckOutSheet({ no }) {
   const { db, actions, toast } = useHotel();
   const room = db.rooms.find((r) => r.no === no);
 
-  const bill = useMemo(() => (room ? buildBill(room, db) : null), [room, db]);
+  // Tax rates: typed by hand, then saved to the server to fix them. Edit unlocks them again.
+  const [taxRates, setTaxRates] = useState(() => room?.billTax || {});
+  const [taxLocked, setTaxLocked] = useState(() => !!room?.billTax);
+  const [taxBusy, setTaxBusy] = useState(false);
+  const bill = useMemo(() => (room ? buildBill(room, db, taxRates) : null), [room, db, taxRates]);
   const [payments, setPayments] = useState([{ mode: 'Cash', amount: String(room?.folio ?? 0) }]);
   const [payTouched, setPayTouched] = useState(false);
   const [adjustments, setAdjustments] = useState([]);   // discount / half day / complimentary
@@ -92,6 +96,20 @@ export function CheckOutSheet({ no }) {
     if (!printBill({ bill, which, ...meta })) toast('Nothing to print for that section');
   };
 
+  const saveTax = async () => {
+    const rates = Object.fromEntries(bill.sections.map((x) => [x.key, x.rate]));
+    setTaxBusy(true);
+    try {
+      await api.put(`/stays/${room.stayId}/bill-tax`, { rates });
+      setTaxRates(rates);
+      setTaxLocked(true);
+      toast('Tax rates saved');
+    } catch (e) {
+      toast(e?.message || 'Could not save tax rates');
+    }
+    setTaxBusy(false);
+  };
+
   const manualBillData = manualBill(bill, manual, manualRate);
   const printManual = (which) => {
     if (!printBill({ bill: manualBillData, which, ...meta, title: 'Bill' })) { toast('Enter an amount to print'); return; }
@@ -139,6 +157,27 @@ export function CheckOutSheet({ no }) {
 
       {/* ------------------------------------------------ generated bill */}
       <h3 style={{ margin: '4px 0 8px', fontSize: 14 }}>Generated bill</h3>
+      <div style={{ background: 'var(--bg)', borderRadius: 11, padding: '10px 12px', margin: '0 0 10px' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+          <b style={{ color: 'var(--ink)', fontSize: 13 }}>GST rates {taxLocked && <Pill tone="g">Fixed</Pill>}</b>
+          {taxLocked
+            ? <button type="button" className="btn sm" onClick={() => setTaxLocked(false)}>Edit</button>
+            : <button type="button" className="btn p sm" disabled={taxBusy} onClick={saveTax}>{taxBusy ? 'Saving…' : 'Save'}</button>}
+        </div>
+        <div style={{ display: 'flex', gap: 8 }}>
+          {bill.sections.map((s) => (
+            <div key={s.key} style={{ flex: 1 }}>
+              <Field
+                label={`${SECTION_TITLES[s.key]} %`}
+                type="number"
+                value={taxLocked ? String(s.rate) : (taxRates[s.key] ?? String(s.rate))}
+                disabled={taxLocked}
+                onChange={(e) => setTaxRates((r) => ({ ...r, [s.key]: e.target.value }))}
+              />
+            </div>
+          ))}
+        </div>
+      </div>
       <table>
         <tbody>
           {bill.sections.map((s) => s.lines.length > 0 && (

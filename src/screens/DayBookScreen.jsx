@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import Card from '../components/Card';
 import DateBar from '../components/DateBar';
 import { Kpi, KpiGrid } from '../components/Kpi';
@@ -106,13 +107,14 @@ function RegTable({ title, tone, rows, openLine, shortage = 0 }) {
 
 export default function DayBookScreen() {
   const { db, openSheet } = useHotel();
+  const [modeFilter, setModeFilter] = useState(null);
 
   const maxMode = Math.max(...PAYMENT_MODES.map((m) => byMode(db, m)), 1);
   const openDay = db.day?.status === 'OPEN';
   const viewingOpen = openDay && db.day.businessDate === db.date;
   const short = db.cash.shortage > 0 ? db.cash.shortage : 0;
-  const incoming = db.register.filter((e) => e.dc === 'credit');
-  const outgoing = db.register.filter((e) => e.dc !== 'credit');
+  const incoming = db.register.filter((e) => e.dc === 'credit' && (!modeFilter || e.mode === modeFilter));
+  const outgoing = db.register.filter((e) => e.dc !== 'credit' && (!modeFilter || e.mode === modeFilter));
   const over = db.cash.shortage < 0 ? -db.cash.shortage : 0;
 
   const printDay = () => {
@@ -158,12 +160,17 @@ export default function DayBookScreen() {
 
       <div className="bk-main">
         <Card
-          title={`Day register · ${fmtDate(db.date)}`}
-          action={<button className="btn sm" onClick={printDay}>Print</button>}
+          title={`Day register · ${fmtDate(db.date)}${modeFilter ? ` · ${modeFilter}` : ''}`}
+          action={(
+            <>
+              {modeFilter && <button className="btn sm" onClick={() => setModeFilter(null)}>Clear filter</button>}
+              <button className="btn sm" onClick={printDay}>Print</button>
+            </>
+          )}
         >
           <div className="reg-split">
             <RegTable title="Incoming" tone="in" rows={incoming} openLine={openLine} />
-            <RegTable title="Outgoing" tone="out" rows={outgoing} openLine={openLine} shortage={short} />
+            <RegTable title="Outgoing" tone="out" rows={outgoing} openLine={openLine} shortage={modeFilter && modeFilter !== 'Cash' ? 0 : short} />
           </div>
         </Card>
 
@@ -172,7 +179,14 @@ export default function DayBookScreen() {
             {PAYMENT_MODES.map((m) => {
               const v = byMode(db, m);
               return (
-                <div key={m} style={{ marginBottom: 12 }}>
+                <div
+                  key={m}
+                  onClick={() => setModeFilter(modeFilter === m ? null : m)}
+                  style={{
+                    marginBottom: 12, cursor: 'pointer', padding: '6px 8px', borderRadius: 8,
+                    background: modeFilter === m ? 'var(--line)' : 'transparent'
+                  }}
+                >
                   <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 5 }}>
                     <span>{m}</span>
                     <span className="num" style={{ color: 'var(--ink)' }}>{money(v)}</span>

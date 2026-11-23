@@ -32,7 +32,8 @@ const section = (key, rate, lines) => {
 };
 
 /** Builds the three bill sections from a room's stay, its kitchen orders and priced guest requests. */
-export function buildBill(room, db) {
+export function buildBill(room, db, rates = {}) {
+  const rateOf = (key, dflt) => (rates[key] === undefined || rates[key] === '' ? dflt : Number(rates[key]) || 0);
   const nights = room.nights || 1;
   const stayLines = room.roomCharges?.length
     ? room.roomCharges.map((c) => ({ d: c.label, q: 1, rate: c.amount, amount: c.amount }))
@@ -54,9 +55,9 @@ export function buildBill(room, db) {
     .map((r) => ({ d: r.label, q: 1, rate: r.price, amount: r.price }));
 
   const sections = [
-    section('stay', roomGstRate(room.stayRate), stayLines),
-    section('food', GST.food, foodLines),
-    section('other', GST.other, otherLines)
+    section('stay', rateOf('stay', roomGstRate(room.stayRate)), stayLines),
+    section('food', rateOf('food', GST.food), foodLines),
+    section('other', rateOf('other', GST.other), otherLines)
   ];
   const sum = (k) => r2(sections.reduce((s, x) => s + x[k], 0));
   return { sections, amount: sum('amount'), taxable: sum('taxable'), cgst: sum('cgst'), sgst: sum('sgst'), total: sum('total') };

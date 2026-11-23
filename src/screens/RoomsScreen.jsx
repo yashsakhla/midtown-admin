@@ -1,7 +1,9 @@
 import { useState } from 'react';
+import { HERO } from '../assets';
 import Card from '../components/Card';
 import Field, { Row2 } from '../components/Field';
 import RoomCard, { AddRoomCard } from '../components/RoomCard';
+import { categoryOf } from '../lib/rooms';
 import { money } from '../lib/format';
 import { countRooms, floors } from '../lib/selectors';
 import { useHotel } from '../store/HotelContext';
@@ -9,13 +11,28 @@ import { useHotel } from '../store/HotelContext';
 export default function RoomsScreen() {
   const { db, openSheet, actions } = useHotel();
   const [floorFilter, setFloorFilter] = useState('all');
+  const [typeFilter, setTypeFilter] = useState('all');
+
+  const matchesType = (r) => {
+    if (typeFilter === 'all') return true;
+    if (typeFilter === 'AC' || typeFilter === 'Non AC') {
+      const cat = /^non\s*-?\s*ac/i.test(r.category || '') || r.category === 'NON_AC' ? 'Non AC' : r.category === 'AC' ? 'AC' : categoryOf(r.type);
+      return cat === typeFilter;
+    }
+    return new RegExp(typeFilter, 'i').test(r.type || '');
+  };
 
   const allFloors = floors(db);
   const visibleFloors = allFloors.filter((f) => floorFilter === 'all' || String(f) === floorFilter);
-  const jumpList = db.rooms.filter((r) => floorFilter === 'all' || String(r.floor) === floorFilter);
+  const jumpList = db.rooms.filter((r) => (floorFilter === 'all' || String(r.floor) === floorFilter) && matchesType(r));
 
   return (
-    <>
+    <div
+      style={{
+        backgroundImage: `linear-gradient(rgba(255,255,255,.82), rgba(255,255,255,.9)), url(${HERO})`,
+        backgroundSize: 'cover', backgroundPosition: 'center', borderRadius: 16, padding: 12
+      }}
+    >
       <Card body>
         <Row2>
           <Field
@@ -42,6 +59,19 @@ export default function RoomsScreen() {
             ))}
           </Field>
         </Row2>
+        <Field
+          as="select"
+          label="Filter by category"
+          value={typeFilter}
+          onChange={(e) => setTypeFilter(e.target.value)}
+        >
+          <option value="all">All categories</option>
+          <option value="AC">AC</option>
+          <option value="Non AC">Non AC</option>
+          <option value="Standard">Standard</option>
+          <option value="Deluxe">Deluxe</option>
+          <option value="Executive">Executive</option>
+        </Field>
       </Card>
 
       <div className="legend">
@@ -56,7 +86,7 @@ export default function RoomsScreen() {
       {visibleFloors.map((f) => (
         <Card key={f} title={`Floor ${f}`} body>
           <div className="rooms">
-            {db.rooms.filter((r) => r.floor === f).map((r) => (
+            {db.rooms.filter((r) => r.floor === f && matchesType(r)).map((r) => (
               <RoomCard key={r.no} room={r} onClick={(no) => openSheet('room', { no })} />
             ))}
             <AddRoomCard onClick={() => openSheet('addRoom', { floor: f })} />
@@ -75,6 +105,6 @@ export default function RoomsScreen() {
       <p style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 10 }}>
         Single / double — {[...new Map(db.rooms.map((r) => [r.type, r])).values()].map((r) => `${r.type} ${money(r.singleRate)}/${money(r.doubleRate)}`).join(' · ')}
       </p>
-    </>
+    </div>
   );
 }
